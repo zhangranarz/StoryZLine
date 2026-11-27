@@ -19,15 +19,22 @@ If your company uses its own TLS certificate authority, start Node with `NODE_EX
 
 ## Running on another computer
 
-Nothing needs installing on Windows: `start.cmd` uses Node.js 18+ if it is there, and otherwise the Windows PowerShell built into Windows 10/11 (`server.ps1`, no admin rights needed). Both behave the same.
+StoryZLine has three interchangeable servers, all with the same page, behaviour and security rules. `start.cmd` uses the first one the laptop can run:
+
+| Server | Needs |
+|---|---|
+| `server.js` | Node.js 18+ |
+| `server.py` | Python 3.7+ (standard library only, no `pip install`) |
+| `server.ps1` | Windows PowerShell 5.1, built into Windows 10/11 |
 
 1. Get the code: `git clone https://github.com/zhangranarz/StoryZLine.git`, or **Code > Download ZIP** on GitHub and unzip it. (Don't run `start.cmd` from inside the ZIP.)
 2. Double-click `start.cmd`. It opens http://127.0.0.1:5180 **on that same computer**.
 
-To start the PowerShell server by hand: `powershell -NoProfile -ExecutionPolicy Bypass -File server.ps1 -Open`.
+To start one by hand: `node server.js`, `python server.py --open` (or `py -3 server.py --open`), or `powershell -NoProfile -ExecutionPolicy Bypass -File server.ps1 -Open`.
 
 If it doesn't work:
-- *"running scripts is disabled on this system"* even with the command above: your company blocks PowerShell scripts by policy. Ask IT, or install Node.js.
+- *Blocked by group policy* / *"running scripts is disabled on this system"*: your company blocks that runtime. `start.cmd` tries the others first, so this means none of Node.js, Python or PowerShell scripts is allowed. Ask IT to approve one of them.
+- *"Python was not found; run without arguments to install from the Microsoft Store"*: that is a Windows shortcut, not Python. Python isn't installed.
 - *Window flashes and closes*: open a Command Prompt in the folder and run `start.cmd` there to see the message.
 - *`EADDRINUSE`*: something already uses port 5180. Run `set PORT=5181` then `start.cmd`, and open http://127.0.0.1:5181.
 - *"Could not reach Bitbucket"*: that laptop can't reach the Bitbucket server. Connect to the company network/VPN and check the URL opens in its browser.

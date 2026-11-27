@@ -110,9 +110,20 @@ test('JAX-RS @Path with verb annotations', () => {
   assert.strictEqual(a.matches[0].match, 'exact');
 });
 
-// A fake Bitbucket Server that accepts jdoe / s3cret.
+// A fake Bitbucket Server that accepts jdoe / s3cret. /redirect-away sends the client to
+// another host name (localhost instead of 127.0.0.1); the login must never follow it there.
 async function startMockBitbucket() {
+  const leaks = [];
   const mock = http.createServer((req, res) => {
+    if (req.url === '/redirect-away') {
+      res.writeHead(302, { Location: `http://localhost:${mock.address().port}/landed` });
+      return res.end();
+    }
+    if (req.url === '/landed') {
+      if (req.headers.authorization) leaks.push(req.headers.authorization);
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      return res.end('landed');
+    }
     const ok = req.headers.authorization === 'Basic ' + Buffer.from('jdoe:s3cret').toString('base64');
     if (!ok) { res.writeHead(401); return res.end(); }
     if (req.url.includes('Missing.java')) { res.writeHead(404); return res.end(); }
@@ -121,11 +132,11 @@ async function startMockBitbucket() {
     res.end(raw ? JAVA : '{"values":[]}');
   });
   await new Promise(r => mock.listen(0, '127.0.0.1', r));
-  return { mock, baseUrl: `http://127.0.0.1:${mock.address().port}` };
+  return { mock, leaks, baseUrl: `http://127.0.0.1:${mock.address().port}` };
 }
 
-// The same checks run against the Node server and the PowerShell server.
-async function checkServer(app, baseUrl) {
+// The same checks run against the Node, PowerShell and Python servers.
+async function checkServer(app, { baseUrl, leaks }) {
   const connection = { baseUrl, user: 'jdoe', password: 's3cret' };
   const post = (body, headers = {}) => fetch(app + '/api/get', {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
@@ -156,35 +167,46 @@ async function checkServer(app, baseUrl) {
   const down = await post({ url: 'http://127.0.0.1:9/x', connection: { ...connection, baseUrl: 'http://127.0.0.1:9' } });
   assert.strictEqual(down.status, 502);
   assert.match((await down.json()).error, /Could not reach Bitbucket/);
+
+  // A redirect may be refused or followed, but the login must not reach the other host.
+  await post({ url: baseUrl + '/redirect-away', connection });
+  assert.deepStrictEqual(leaks, [], 'login was forwarded to a redirect target on another host');
+}
+
+async function checkSpawnedServer(command, args, port) {
+  const mockInfo = await startMockBitbucket();
+  const child = spawn(command, args);
+  let out = '';
+  child.stdout.on('data', d => { out += d; });
+  child.stderr.on('data', d => { out += d; });
+  try {
+    for (let i = 0; i < 100 && !out.includes('running at'); i++) await new Promise(r => setTimeout(r, 100));
+    assert.match(out, /running at/, `${command} server did not start:\n${out}`);
+    await checkServer(`http://127.0.0.1:${port}`, mockInfo);
+  } finally {
+    child.kill();
+    mockInfo.mock.close();
+  }
 }
 
 test('Node server proxies Bitbucket with the page login', async () => {
-  const { mock, baseUrl } = await startMockBitbucket();
+  const mockInfo = await startMockBitbucket();
   process.env.PORT = '5191';
   const { server: app } = require('../server');
   await new Promise(r => app.listen(5191, '127.0.0.1', r));
   try {
-    await checkServer('http://127.0.0.1:5191', baseUrl);
+    await checkServer('http://127.0.0.1:5191', mockInfo);
   } finally {
     app.close();
-    mock.close();
+    mockInfo.mock.close();
   }
 });
 
 const hasPowerShell = process.platform === 'win32' && spawnSync('powershell', ['-NoProfile', '-Command', 'exit 0']).status === 0;
+const python = ['python', 'python3'].find(p => spawnSync(p, ['-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 7) else 1)']).status === 0);
 
-test('PowerShell server behaves the same', { skip: !hasPowerShell && 'Windows PowerShell not available' }, async () => {
-  const { mock, baseUrl } = await startMockBitbucket();
-  const ps = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, '..', 'server.ps1'), '-Port', '5192']);
-  let out = '';
-  ps.stdout.on('data', d => { out += d; });
-  ps.stderr.on('data', d => { out += d; });
-  try {
-    for (let i = 0; i < 100 && !out.includes('running at'); i++) await new Promise(r => setTimeout(r, 100));
-    assert.match(out, /running at/, `server.ps1 did not start:\n${out}`);
-    await checkServer('http://127.0.0.1:5192', baseUrl);
-  } finally {
-    ps.kill();
-    mock.close();
-  }
-});
+test('PowerShell server behaves the same', { skip: !hasPowerShell && 'Windows PowerShell not available' }, () =>
+  checkSpawnedServer('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, '..', 'server.ps1'), '-Port', '5192'], 5192));
+
+test('Python server behaves the same', { skip: !python && 'Python 3.7+ not available' }, () =>
+  checkSpawnedServer(python, ['-u', path.join(__dirname, '..', 'server.py'), '--port', '5193'], 5193));

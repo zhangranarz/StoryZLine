@@ -11,21 +11,37 @@ if not errorlevel 1 (
   goto :end
 )
 
-rem Use Node.js 18+ when it is installed, otherwise the built-in Windows PowerShell.
-set USE_NODE=
+rem Pick the first runtime this laptop allows: Node.js 18+, then Python 3.7+, then Windows PowerShell.
 where node >nul 2>nul
 if not errorlevel 1 (
-  for /f "tokens=1 delims=v." %%v in ('node -v') do if %%v GEQ 18 set USE_NODE=1
+  for /f "tokens=1 delims=v." %%v in ('node -v') do if %%v GEQ 18 goto :node
 )
 
-if defined USE_NODE (
-  echo Starting StoryZLine with Node.js at http://127.0.0.1:%PORT% - close this window or press Ctrl+C to stop
-  start "" http://127.0.0.1:%PORT%
-  node server.js
-) else (
-  echo Node.js 18+ not found - using Windows PowerShell instead.
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0server.ps1" -Open
+rem The version check also skips the Microsoft Store "python" shortcut, which is not a real Python.
+set PYTHON=
+python -c "import sys; sys.exit(0 if sys.version_info >= (3, 7) else 1)" >nul 2>nul
+if not errorlevel 1 set PYTHON=python
+if not defined PYTHON (
+  py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 7) else 1)" >nul 2>nul
+  if not errorlevel 1 set PYTHON=py -3
 )
+if defined PYTHON goto :python
+
+echo Node.js 18+ and Python 3.7+ not found - using Windows PowerShell instead.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0server.ps1" -Open
+if errorlevel 1 goto :fail
+goto :end
+
+:node
+echo Starting StoryZLine with Node.js at http://127.0.0.1:%PORT% - close this window or press Ctrl+C to stop
+start "" http://127.0.0.1:%PORT%
+node server.js
+if errorlevel 1 goto :fail
+goto :end
+
+:python
+echo Starting StoryZLine with Python...
+%PYTHON% server.py --open
 if errorlevel 1 goto :fail
 goto :end
 
