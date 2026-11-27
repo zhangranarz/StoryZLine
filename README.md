@@ -5,13 +5,17 @@ A small local web tool: enter an **eCommAPI** and the **EndPoint Java file locat
 ## Setup
 
 1. Node.js 18 or newer (no `npm install` needed: there are no dependencies).
-2. Copy `.env.example` to `.env` and fill in:
-   - `BITBUCKET_BASE_URL`: your Bitbucket Server/Data Center URL (with any context path), or `https://bitbucket.org` for Cloud.
-   - `BITBUCKET_TOKEN`: a read-only HTTP access token. `.env` is git-ignored; never commit it.
-   - Optional: `BITBUCKET_PROJECT`, `BITBUCKET_REPO`, `BITBUCKET_BRANCH`, so you can type plain file paths.
-3. Run `npm start` (or double-click `start.cmd`) and open http://127.0.0.1:5180.
+2. Run `npm start` (or double-click `start.cmd`) and open http://127.0.0.1:5180.
+3. In the **Bitbucket login** section, enter:
+   - **Bitbucket URL**: the address you open Bitbucket at (with any context path, e.g. `https://git.bank.com/bitbucket`), or `https://bitbucket.org` for Cloud.
+   - **User ID** and **Password**. If your Bitbucket uses SSO or two-factor login, use an HTTP access token as the password. Bitbucket Cloud needs an API token, not your account password.
+   - Optional: a default project, repo and branch, so you can type plain file paths.
 
-If your company uses its own TLS certificate authority, start Node with `NODE_EXTRA_CA_CERTS=path\to\corp-ca.pem`.
+   Click **Log in** to check it. The password is sent only to this local server and on to Bitbucket, and is never saved. The other fields are remembered in your browser.
+
+Optionally you can preset the URL and defaults in a `.env` file (see `.env.example`). `.env` is git-ignored.
+
+If your company uses its own TLS certificate authority, start Node with `NODE_EXTRA_CA_CERTS=path	o\corp-ca.pem`.
 
 ## What you can enter
 
@@ -24,8 +28,9 @@ If your company uses its own TLS certificate authority, start Node with `NODE_EX
 
 ## Security
 
-- The server listens on `127.0.0.1` only, and the token never reaches the browser.
-- Requests go only to the host in `BITBUCKET_BASE_URL`; URLs for any other host are rejected.
+- The server listens on `127.0.0.1` only. The password is held in the page's memory and passed through per request; it is never written to disk or browser storage.
+- The API only accepts JSON requests from the StoryZLine page itself, so other websites open in your browser can't use it.
+- A pasted file URL must be on the same host as the Bitbucket URL; others are rejected.
 
 ## Tests
 

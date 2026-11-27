@@ -3,7 +3,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { fetchFile, LocationError } = require('./lib/bitbucket');
+const { fetchFile, checkLogin, LocationError } = require('./lib/bitbucket');
 const { analyse } = require('./lib/java');
 
 function loadEnv(file) {
@@ -47,9 +47,42 @@ function readJson(req) {
   });
 }
 
+// The login typed in the page takes precedence over .env. The password is used for this
+// request only and is never stored.
+function effectiveCfg(conn) {
+  const c = { ...cfg };
+  if (!conn || typeof conn !== 'object') return c;
+  const pick = k => (typeof conn[k] === 'string' ? conn[k].trim() : '');
+  for (const k of ['baseUrl', 'project', 'repo', 'branch']) if (pick(k)) c[k] = pick(k);
+  if (pick('user') || conn.password) {
+    c.user = pick('user');
+    c.token = typeof conn.password === 'string' ? conn.password : '';
+  }
+  if (c.baseUrl && !/^https?:\/\/[^/\s]+/i.test(c.baseUrl)) {
+    throw new LocationError('The Bitbucket URL must start with http:// or https://.');
+  }
+  return c;
+}
+
+// Only the StoryZLine page itself may call the API. This stops other websites open in the
+// same browser from using this server (and the login) through cross-site or DNS-rebinding requests.
+function fromOwnPage(req) {
+  const host = (req.headers.host || '').toLowerCase();
+  const allowed = [`127.0.0.1:${PORT}`, `localhost:${PORT}`, `${HOST}:${PORT}`.toLowerCase()];
+  if (!allowed.includes(host)) return false;
+  if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) return false;
+  const origin = req.headers.origin;
+  return !origin || origin.toLowerCase() === `http://${host}`;
+}
+
+async function handleCheck(req, res) {
+  const { connection } = await readJson(req);
+  send(res, 200, await checkLogin(effectiveCfg(connection)));
+}
+
 async function handleFetch(req, res) {
-  const { ecommApi, location } = await readJson(req);
-  const file = await fetchFile(location, cfg);
+  const { ecommApi, location, connection } = await readJson(req);
+  const file = await fetchFile(location, effectiveCfg(connection));
   send(res, 200, {
     ecommApi: ecommApi || '',
     project: file.project,
@@ -76,7 +109,12 @@ function serveStatic(req, res) {
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === 'POST' && req.url === '/api/fetch') return await handleFetch(req, res);
+    if (req.method === 'POST' && req.url.startsWith('/api/')) {
+      if (!fromOwnPage(req)) return send(res, 403, { error: 'Requests must come from the StoryZLine page.' });
+      if (req.url === '/api/fetch') return await handleFetch(req, res);
+      if (req.url === '/api/check') return await handleCheck(req, res);
+      return send(res, 404, { error: 'Not found' });
+    }
     if (req.method === 'GET' && req.url === '/api/config') {
       // Never return the token itself.
       return send(res, 200, {
@@ -96,9 +134,7 @@ const server = http.createServer(async (req, res) => {
 if (require.main === module) {
   server.listen(PORT, HOST, () => {
     console.log(`StoryZLine running at http://${HOST}:${PORT}`);
-    if (!cfg.baseUrl) console.warn('BITBUCKET_BASE_URL is not set: copy .env.example to .env and fill it in.');
-    if (!cfg.token) console.warn('BITBUCKET_TOKEN is not set: only public repositories will be readable.');
   });
 }
 
-module.exports = { server, cfg };
+module.exports = { server, cfg, effectiveCfg };

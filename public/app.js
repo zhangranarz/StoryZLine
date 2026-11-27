@@ -9,17 +9,71 @@ const store = {
   get(k) { try { return localStorage.getItem('storyzline.' + k) || ''; } catch { return ''; } },
   set(k, v) { try { localStorage.setItem('storyzline.' + k, v); } catch { /* storage unavailable */ } },
 };
+// Login fields remembered between visits. The password is deliberately not in this list.
+const CONN_FIELDS = { baseUrl: 'conn-url', user: 'conn-user', project: 'conn-project', repo: 'conn-repo', branch: 'conn-branch' };
+
 $('api').value = store.get('api');
 $('location').value = store.get('location');
+for (const [k, id] of Object.entries(CONN_FIELDS)) $(id).value = store.get(k);
 
+// Fill any empty fields from .env defaults, if the server has them.
 fetch('/api/config').then(r => r.json()).then(c => {
-  const parts = [];
-  if (c.baseUrl) parts.push(`Bitbucket: <b>${esc(c.baseUrl)}</b>`);
-  else parts.push('<span class="warn">BITBUCKET_BASE_URL not set in .env</span>');
-  if (c.project && c.repo) parts.push(`default repo ${esc(c.project)}/${esc(c.repo)}${c.branch ? ' @ ' + esc(c.branch) : ''}`);
-  parts.push(c.tokenSet ? `token: ${esc(c.auth)}` : '<span class="warn">no token</span>');
-  $('config').innerHTML = parts.join(' · ');
-}).catch(() => { $('config').innerHTML = '<span class="warn">Server not reachable</span>'; });
+  for (const [k, id] of Object.entries(CONN_FIELDS)) if (!$(id).value && c[k]) $(id).value = c[k];
+  if ($('conn-project').value || $('conn-repo').value) $('defaults').open = true;
+  updateState();
+}).catch(() => setConnStatus('Server not reachable. Is StoryZLine running?', true));
+
+let loggedIn = false;
+
+function connection() {
+  const c = { password: $('conn-pass').value };
+  for (const [k, id] of Object.entries(CONN_FIELDS)) c[k] = $(id).value.trim();
+  return c;
+}
+
+function updateState() {
+  const c = connection();
+  const el = $('conn-state');
+  if (loggedIn) { el.textContent = `✓ logged in as ${c.user}`; el.className = 'state ok'; }
+  else if (!c.baseUrl || !c.user || !c.password) { el.textContent = 'not logged in'; el.className = 'state'; }
+  else { el.textContent = 'not checked yet'; el.className = 'state'; }
+}
+
+function setConnStatus(text, isError = false) {
+  $('conn-status').textContent = text;
+  $('conn-status').className = isError ? 'error' : '';
+}
+
+for (const id of ['conn-url', 'conn-user', 'conn-pass']) {
+  $(id).addEventListener('input', () => { loggedIn = false; updateState(); });
+}
+
+async function post(url, body) {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+$('conn').addEventListener('submit', async e => {
+  e.preventDefault();
+  const c = connection();
+  for (const [k, id] of Object.entries(CONN_FIELDS)) store.set(k, c[k]);
+  setConnStatus('Checking login…');
+  $('login').disabled = true;
+  try {
+    await post('/api/check', { connection: c });
+    loggedIn = true;
+    setConnStatus('');
+    $('location').focus();
+  } catch (err) {
+    loggedIn = false;
+    setConnStatus(err.message, true);
+  } finally {
+    $('login').disabled = false;
+    updateState();
+  }
+});
 
 $('form').addEventListener('submit', async e => {
   e.preventDefault();
@@ -27,16 +81,19 @@ $('form').addEventListener('submit', async e => {
   const location = $('location').value.trim();
   store.set('api', ecommApi);
   store.set('location', location);
+  const conn = connection();
+  if (!conn.baseUrl || !conn.user || !conn.password) {
+    setStatus('Fill in the Bitbucket login above first.', true);
+    $(!conn.baseUrl ? 'conn-url' : !conn.user ? 'conn-user' : 'conn-pass').focus();
+    return;
+  }
+  for (const [k, id] of Object.entries(CONN_FIELDS)) store.set(k, conn[k]);
   setStatus('Pulling…');
   $('go').disabled = true;
   try {
-    const res = await fetch('/api/fetch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ecommApi, location }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const data = await post('/api/fetch', { ecommApi, location, connection: conn });
+    loggedIn = true;
+    updateState();
     last = data;
     render(data);
     setStatus(`Loaded ${data.content.split('\n').length} lines (${(data.bytes / 1024).toFixed(1)} KB).`);

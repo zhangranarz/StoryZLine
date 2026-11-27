@@ -10,10 +10,40 @@
   <header>
     <h1>StoryZLine</h1>
     <p class="sub">Pull an eCommAPI's EndPoint Java source from Bitbucket</p>
-    <div id="config" class="config"></div>
   </header>
 
   <main>
+    <form id="conn" class="card">
+      <div class="card-title">Bitbucket login <span id="conn-state" class="state"></span></div>
+      <div class="grid">
+        <label class="wide">
+          <span>Bitbucket URL</span>
+          <input id="conn-url" required placeholder="https://bitbucket.yourcompany.com" autocomplete="url">
+        </label>
+        <label>
+          <span>User ID</span>
+          <input id="conn-user" required autocomplete="username">
+        </label>
+        <label>
+          <span>Password</span>
+          <input id="conn-pass" type="password" required autocomplete="current-password" placeholder="Password or HTTP access token">
+        </label>
+      </div>
+      <details id="defaults">
+        <summary>Default project / repo / branch (optional, lets you type plain file paths)</summary>
+        <div class="grid three">
+          <label><span>Project key</span><input id="conn-project" placeholder="ECOM" autocomplete="off"></label>
+          <label><span>Repository</span><input id="conn-repo" placeholder="ecomm-api" autocomplete="off"></label>
+          <label><span>Branch</span><input id="conn-branch" placeholder="develop" autocomplete="off"></label>
+        </div>
+      </details>
+      <div class="actions">
+        <button id="login" type="submit">Log in</button>
+        <span id="conn-status" role="status"></span>
+      </div>
+      <p class="note">Your password goes only to this local server and on to Bitbucket. It is never saved; reloading the page clears it. The URL, user ID and defaults are remembered in this browser.</p>
+    </form>
+
     <form id="form" class="card">
       <label>
         <span>eCommAPI</span>
