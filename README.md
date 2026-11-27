@@ -15,7 +15,7 @@ A small local web tool: enter an **eCommAPI** and the **EndPoint Java file locat
 
 Optionally you can preset the URL and defaults in a `.env` file (see `.env.example`). `.env` is git-ignored.
 
-If your company uses its own TLS certificate authority, start Node with `NODE_EXTRA_CA_CERTS=path	o\corp-ca.pem`.
+If your company uses its own TLS certificate authority, start Node with `NODE_EXTRA_CA_CERTS=path\to\corp-ca.pem`.
 
 ## What you can enter
 
