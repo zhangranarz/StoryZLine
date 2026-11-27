@@ -1,0 +1,12 @@
+{
+  "name": "storyzline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pull an eCommAPI's EndPoint Java source from Bitbucket",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=18" }
+}

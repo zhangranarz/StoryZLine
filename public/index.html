@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StoryZLine</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>StoryZLine</h1>
+    <p class="sub">Pull an eCommAPI's EndPoint Java source from Bitbucket</p>
+    <div id="config" class="config"></div>
+  </header>
+
+  <main>
+    <form id="form" class="card">
+      <label>
+        <span>eCommAPI</span>
+        <input id="api" name="api" placeholder="/spl-banking/enq/customer/portfolio" autocomplete="off">
+      </label>
+      <label>
+        <span>EndPoint Java file location</span>
+        <input id="location" name="location" required autocomplete="off"
+               placeholder="Bitbucket file URL, or a path such as src/main/java/com/bank/PortfolioEndpoint.java">
+      </label>
+      <div class="actions">
+        <button id="go" type="submit">Pull from Bitbucket</button>
+        <span id="status" role="status"></span>
+      </div>
+    </form>
+
+    <section id="result" hidden>
+      <div class="card meta">
+        <div class="meta-head">
+          <div>
+            <div id="file-name" class="file-name"></div>
+            <div id="file-where" class="muted"></div>
+          </div>
+          <div class="buttons">
+            <a id="open" target="_blank" rel="noopener">Open in Bitbucket</a>
+            <button id="copy" type="button">Copy</button>
+            <button id="download" type="button">Download</button>
+          </div>
+        </div>
+        <div id="match"></div>
+        <details id="eps">
+          <summary>Endpoints found in this file</summary>
+          <table><thead><tr><th>Method</th><th>Path</th><th>Java method</th><th>Line</th></tr></thead><tbody></tbody></table>
+        </details>
+      </div>
+      <div class="card code"><pre id="code"></pre></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
