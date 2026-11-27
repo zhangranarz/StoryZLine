@@ -17,6 +17,20 @@ Optionally you can preset the URL and defaults in a `.env` file (see `.env.examp
 
 If your company uses its own TLS certificate authority, start Node with `NODE_EXTRA_CA_CERTS=path\to\corp-ca.pem`.
 
+## Running on another computer
+
+1. Install **Node.js 18 or newer** (the LTS version from https://nodejs.org/). Python is not needed.
+2. Get the code: `git clone https://github.com/zhangranarz/StoryZLine.git`, or **Code > Download ZIP** on GitHub and unzip it. (Don't run `start.cmd` from inside the ZIP.)
+3. Double-click `start.cmd`, or run `npm start` in the folder, and open http://127.0.0.1:5180 **on that same computer**.
+
+If it doesn't work:
+- *"Node.js is not installed"* / *"'node' is not recognized"*: install Node, then open a **new** window.
+- *Window flashes and closes*: open a terminal in the folder and run `node server.js` to see the error.
+- *`EADDRINUSE`*: something already uses port 5180. Run `set PORT=5181` then `start.cmd`, and open http://127.0.0.1:5181.
+- *"Could not reach Bitbucket"*: that laptop can't reach the Bitbucket server. Connect to the company network/VPN and check the URL opens in its browser.
+- *`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`* or *`SELF_SIGNED_CERT_IN_CHAIN`*: your company's certificate authority. Run `set NODE_EXTRA_CA_CERTS=C:\path\to\corp-ca.pem` before `start.cmd`.
+- The server only accepts connections from the computer it runs on. Opening `127.0.0.1:5180` on one laptop never reaches the server on another; run it on each laptop.
+
 ## What you can enter
 
 **EndPoint Java file location**, any of:
