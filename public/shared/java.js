@@ -1,7 +1,8 @@
-'use strict';
-
 // Lightweight Java endpoint scanner: finds Spring MVC / JAX-RS mappings and matches them
 // against an eCommAPI path. It is a heuristic text scan, not a full Java parser.
+// Shared by the browser page and the Node tests.
+(function () {
+'use strict';
 
 const MAPPINGS = {
   RequestMapping: null, GetMapping: 'GET', PostMapping: 'POST', PutMapping: 'PUT',
@@ -225,4 +226,7 @@ function analyse(src, api) {
   };
 }
 
-module.exports = { analyse, findEndpoints, matchEndpoints, normaliseApi, stripComments };
+const api = { analyse, findEndpoints, matchEndpoints, normaliseApi, stripComments };
+if (typeof module === 'object' && module.exports) module.exports = api;
+else window.StoryZJava = api;
+})();

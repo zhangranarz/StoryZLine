@@ -4,8 +4,8 @@ A small local web tool: enter an **eCommAPI** and the **EndPoint Java file locat
 
 ## Setup
 
-1. Node.js 18 or newer (no `npm install` needed: there are no dependencies).
-2. Run `npm start` (or double-click `start.cmd`) and open http://127.0.0.1:5180.
+1. Windows: nothing to install (see *Running on another computer*). Elsewhere: Node.js 18 or newer, with no `npm install` needed.
+2. Double-click `start.cmd` (or run `npm start`) and open http://127.0.0.1:5180.
 3. In the **Bitbucket login** section, enter:
    - **Bitbucket URL**: the address you open Bitbucket at (with any context path, e.g. `https://git.bank.com/bitbucket`), or `https://bitbucket.org` for Cloud.
    - **User ID** and **Password**. If your Bitbucket uses SSO or two-factor login, use an HTTP access token as the password. Bitbucket Cloud needs an API token, not your account password.
@@ -13,19 +13,22 @@ A small local web tool: enter an **eCommAPI** and the **EndPoint Java file locat
 
    Click **Log in** to check it. The password is sent only to this local server and on to Bitbucket, and is never saved. The other fields are remembered in your browser.
 
-Optionally you can preset the URL and defaults in a `.env` file (see `.env.example`). `.env` is git-ignored.
+With the Node.js server you can also preset the URL and defaults in a `.env` file (see `.env.example`). `.env` is git-ignored.
 
 If your company uses its own TLS certificate authority, start Node with `NODE_EXTRA_CA_CERTS=path\to\corp-ca.pem`.
 
 ## Running on another computer
 
-1. Install **Node.js 18 or newer** (the LTS version from https://nodejs.org/). Python is not needed.
-2. Get the code: `git clone https://github.com/zhangranarz/StoryZLine.git`, or **Code > Download ZIP** on GitHub and unzip it. (Don't run `start.cmd` from inside the ZIP.)
-3. Double-click `start.cmd`, or run `npm start` in the folder, and open http://127.0.0.1:5180 **on that same computer**.
+Nothing needs installing on Windows: `start.cmd` uses Node.js 18+ if it is there, and otherwise the Windows PowerShell built into Windows 10/11 (`server.ps1`, no admin rights needed). Both behave the same.
+
+1. Get the code: `git clone https://github.com/zhangranarz/StoryZLine.git`, or **Code > Download ZIP** on GitHub and unzip it. (Don't run `start.cmd` from inside the ZIP.)
+2. Double-click `start.cmd`. It opens http://127.0.0.1:5180 **on that same computer**.
+
+To start the PowerShell server by hand: `powershell -NoProfile -ExecutionPolicy Bypass -File server.ps1 -Open`.
 
 If it doesn't work:
-- *"Node.js is not installed"* / *"'node' is not recognized"*: install Node, then open a **new** window.
-- *Window flashes and closes*: open a terminal in the folder and run `node server.js` to see the error.
+- *"running scripts is disabled on this system"* even with the command above: your company blocks PowerShell scripts by policy. Ask IT, or install Node.js.
+- *Window flashes and closes*: open a Command Prompt in the folder and run `start.cmd` there to see the message.
 - *`EADDRINUSE`*: something already uses port 5180. Run `set PORT=5181` then `start.cmd`, and open http://127.0.0.1:5181.
 - *"Could not reach Bitbucket"*: that laptop can't reach the Bitbucket server. Connect to the company network/VPN and check the URL opens in its browser.
 - *`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`* or *`SELF_SIGNED_CERT_IN_CHAIN`*: your company's certificate authority. Run `set NODE_EXTRA_CA_CERTS=C:\path\to\corp-ca.pem` before `start.cmd`.

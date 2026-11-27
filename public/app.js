@@ -1,6 +1,7 @@
 'use strict';
 
 const $ = id => document.getElementById(id);
+const Loc = window.StoryZLocation;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 let last = null;
 
@@ -62,7 +63,9 @@ $('conn').addEventListener('submit', async e => {
   setConnStatus('Checking login…');
   $('login').disabled = true;
   try {
-    await post('/api/check', { connection: c });
+    const reply = await post('/api/get', { url: Loc.loginCheckUrl(c), connection: c });
+    const problem = Loc.responseProblem(reply, 'No Bitbucket REST API at this URL. Check the Bitbucket URL (include any context path such as /bitbucket).');
+    if (problem) throw new Error(problem);
     loggedIn = true;
     setConnStatus('');
     $('location').focus();
@@ -91,7 +94,18 @@ $('form').addEventListener('submit', async e => {
   setStatus('Pulling…');
   $('go').disabled = true;
   try {
-    const data = await post('/api/fetch', { ecommApi, location, connection: conn });
+    const loc = Loc.resolveLocation(location, conn);
+    const reply = await post('/api/get', { url: loc.rawUrl, connection: conn });
+    const problem = Loc.responseProblem(reply,
+      `File not found: ${loc.project}/${loc.repo}/${loc.path}${loc.ref ? ` at ${loc.ref}` : ''}.`);
+    if (problem) {
+      if (reply.status === 401) { loggedIn = false; updateState(); }
+      throw new Error(problem);
+    }
+    const data = {
+      ...loc, ecommApi, content: reply.body, bytes: new Blob([reply.body]).size,
+      analysis: window.StoryZJava.analyse(reply.body, ecommApi),
+    };
     loggedIn = true;
     updateState();
     last = data;

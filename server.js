@@ -3,8 +3,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { fetchFile, checkLogin, LocationError } = require('./lib/bitbucket');
-const { analyse } = require('./lib/java');
+const { proxyGet, ProxyError } = require('./lib/proxy');
 
 function loadEnv(file) {
   if (!fs.existsSync(file)) return;
@@ -39,10 +38,10 @@ function readJson(req) {
     let data = '';
     req.on('data', chunk => {
       data += chunk;
-      if (data.length > 64 * 1024) { reject(new LocationError('Request too large.', 413)); req.destroy(); }
+      if (data.length > 64 * 1024) { reject(new ProxyError('Request too large.', 413)); req.destroy(); }
     });
     req.on('end', () => {
-      try { resolve(JSON.parse(data || '{}')); } catch { reject(new LocationError('Invalid JSON body.')); }
+      try { resolve(JSON.parse(data || '{}')); } catch { reject(new ProxyError('Invalid JSON body.')); }
     });
   });
 }
@@ -53,13 +52,10 @@ function effectiveCfg(conn) {
   const c = { ...cfg };
   if (!conn || typeof conn !== 'object') return c;
   const pick = k => (typeof conn[k] === 'string' ? conn[k].trim() : '');
-  for (const k of ['baseUrl', 'project', 'repo', 'branch']) if (pick(k)) c[k] = pick(k);
+  if (pick('baseUrl')) c.baseUrl = pick('baseUrl');
   if (pick('user') || conn.password) {
     c.user = pick('user');
     c.token = typeof conn.password === 'string' ? conn.password : '';
-  }
-  if (c.baseUrl && !/^https?:\/\/[^/\s]+/i.test(c.baseUrl)) {
-    throw new LocationError('The Bitbucket URL must start with http:// or https://.');
   }
   return c;
 }
@@ -75,25 +71,9 @@ function fromOwnPage(req) {
   return !origin || origin.toLowerCase() === `http://${host}`;
 }
 
-async function handleCheck(req, res) {
-  const { connection } = await readJson(req);
-  send(res, 200, await checkLogin(effectiveCfg(connection)));
-}
-
-async function handleFetch(req, res) {
-  const { ecommApi, location, connection } = await readJson(req);
-  const file = await fetchFile(location, effectiveCfg(connection));
-  send(res, 200, {
-    ecommApi: ecommApi || '',
-    project: file.project,
-    repo: file.repo,
-    ref: file.ref,
-    path: file.path,
-    browseUrl: file.browseUrl,
-    bytes: file.bytes,
-    content: file.content,
-    analysis: analyse(file.content, ecommApi),
-  });
+async function handleGet(req, res) {
+  const { url, connection } = await readJson(req);
+  send(res, 200, await proxyGet(url, effectiveCfg(connection)));
 }
 
 function serveStatic(req, res) {
@@ -102,7 +82,7 @@ function serveStatic(req, res) {
   if (!file.startsWith(PUBLIC + path.sep)) return send(res, 403, 'Forbidden', 'text/plain');
   fs.readFile(file, (err, buf) => {
     if (err) return send(res, 404, 'Not found', 'text/plain');
-    res.writeHead(200, { 'Content-Type': `${TYPES[path.extname(file)] || 'application/octet-stream'}; charset=utf-8` });
+    res.writeHead(200, { 'Content-Type': `${TYPES[path.extname(file)] || 'application/octet-stream'}; charset=utf-8`, 'Cache-Control': 'no-store' });
     res.end(buf);
   });
 }
@@ -111,21 +91,20 @@ const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'POST' && req.url.startsWith('/api/')) {
       if (!fromOwnPage(req)) return send(res, 403, { error: 'Requests must come from the StoryZLine page.' });
-      if (req.url === '/api/fetch') return await handleFetch(req, res);
-      if (req.url === '/api/check') return await handleCheck(req, res);
+      if (req.url === '/api/get') return await handleGet(req, res);
       return send(res, 404, { error: 'Not found' });
     }
     if (req.method === 'GET' && req.url === '/api/config') {
       // Never return the token itself.
       return send(res, 200, {
-        baseUrl: cfg.baseUrl, project: cfg.project, repo: cfg.repo, branch: cfg.branch,
-        tokenSet: Boolean(cfg.token), auth: cfg.token ? (cfg.user ? 'basic' : 'bearer') : 'none',
+        server: 'node', baseUrl: cfg.baseUrl, project: cfg.project, repo: cfg.repo, branch: cfg.branch,
+        tokenSet: Boolean(cfg.token),
       });
     }
     if (req.method === 'GET') return serveStatic(req, res);
     send(res, 405, { error: 'Method not allowed' });
   } catch (err) {
-    const status = err instanceof LocationError ? err.status : 500;
+    const status = err instanceof ProxyError ? err.status : 500;
     if (status === 500) console.error(err);
     send(res, status, { error: err.message });
   }
