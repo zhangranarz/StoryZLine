@@ -489,3 +489,67 @@ test('mock Bitbucket serves the demo files through server.py', { skip: !python &
     mock.kill();
   }
 });
+
+// ---- Matching API -> Endpoint -> Controller ----
+
+const { linkFlows, findMethods } = require('../public/shared/java');
+const API_FILE = 'ecomm-services/src/main/java/com/example/ecomm/enq/api/CustomerPortfolioApi.java';
+const CTL_FILE = 'ecomm-services/src/main/java/com/example/ecomm/enq/controller/CustomerPortfolioController.java';
+const flowText = r => `${r.methods.join('|')} ${r.paths.join(',')} | ${r.api ? r.api.name : '-'} -> ` +
+  `${r.endpoint ? `${r.endpoint.name}${r.endpoint.how ? ` (${r.endpoint.how})` : ''}` : '-'} -> ${r.controller.map(c => c.name).join('+') || '-'}`;
+
+test('findMethods finds declarations, not calls, ifs or object creation', () => {
+  const src = [
+    'public class C {',
+    '  private final Foo foo = new Foo(1);',
+    '  /** Doc. */',
+    '  @Override',
+    '  public <T> List<T> list(Map<String, List<T>> in) throws IOException, X {',
+    '    if (in.isEmpty()) { return new ArrayList<>(); }',
+    '    for (String k : in.keySet()) foo.bar(k);',
+    '    return helper(in);',
+    '  }',
+    '  abstract void later(int a);',
+    '  C(int x) { this.x = x; }',
+    '}',
+  ].join('\n');
+  // A constructor without a modifier (C(int x)) isn't listed; constructors never take part in links.
+  assert.deepStrictEqual(findMethods(src).map(m => `${m.name} ${m.startLine}-${m.endLine}`), ['list 3-9', 'later 10-10']);
+});
+
+test('the demo API, Endpoint and Controller link end to end', () => {
+  const { rows, classes } = linkFlows(sample(API_FILE), sample(SPRING), sample(CTL_FILE));
+  assert.deepStrictEqual(classes, { api: 'CustomerPortfolioApi', endpoint: 'CustomerPortfolioEndpoint', controller: 'CustomerPortfolioController' });
+  assert.deepStrictEqual(rows.map(flowText), [
+    'GET /enq/customer/portfolio/{customerId} | getPortfolio -> getPortfolio (same path) -> getPortfolio',
+    'POST /enq/customer/portfolio/{customerId} | updatePortfolio -> updatePortfolio (same path) -> validate+savePortfolio',
+    'GET /enq/customer/summary | summary -> summary (same path) -> summary',
+    'DELETE /enq/customer/portfolio/{customerId}/holdings/{holdingId} | removeHolding -> removeHolding (same path) -> removeHolding',
+    'GET /enq/customer/portfolio/{customerId}/export | exportPortfolio -> exportPortfolio (same method name) -> exportCsv',
+  ]);
+  // Sections cover the whole method; the Endpoint's controller calls are marked, not audit.log().
+  const epLines = sample(SPRING).split(/\r?\n/);
+  const get = rows[0];
+  assert.match(epLines[get.endpoint.startLine - 1], /^ {4}\/\*\*/);
+  assert.match(epLines[get.endpoint.endLine - 1], /^ {4}\}$/);
+  assert.deepStrictEqual(get.callLines.map(n => epLines[n - 1].trim()), ['return ResponseEntity.ok(controller.getPortfolio(customerId, currency));']);
+  const ctlLines = sample(CTL_FILE).split(/\r?\n/);
+  assert.match(ctlLines[rows[4].controller[0].startLine - 1], /CSV export/);
+});
+
+test('linking without an API file, without a typed Controller field, and with gaps', () => {
+  // No API file: rows start from the Endpoint's mappings.
+  const noApi = linkFlows(null, sample(SPRING), sample(CTL_FILE)).rows.map(flowText);
+  assert.strictEqual(noApi.length, 4);
+  assert.strictEqual(noApi[1], 'POST /enq/customer/portfolio/{customerId} | - -> updatePortfolio -> validate+savePortfolio');
+
+  // The Endpoint gets the Controller some other way (no field of its type): calls to methods the Controller has.
+  const ep = '@RestController\npublic class E {\n  @GetMapping("/x")\n  public R x() { return Beans.get().find(1); }\n}';
+  const ctl = 'public class Ctl {\n  public R find(int id) { return null; }\n}';
+  assert.deepStrictEqual(linkFlows(null, ep, ctl).rows.map(flowText), ['GET /x | - -> x -> find']);
+
+  // An API method the Endpoint doesn't have, and no Controller pulled.
+  const api = '@RequestMapping("/a")\npublic interface A {\n  @GetMapping("/b") R b();\n  @GetMapping("/c") R c();\n}';
+  const epB = '@RestController\n@RequestMapping("/a")\npublic class E implements A {\n  @GetMapping("/b") public R b() { return null; }\n}';
+  assert.deepStrictEqual(linkFlows(api, epB, null).rows.map(flowText), ['GET /a/b | b -> b (same path) -> -', 'GET /a/c | c -> - -> -']);
+});

@@ -25,47 +25,8 @@
     <section id="panel-api" class="panel" role="tabpanel" aria-labelledby="tab-api">
       <form id="form" class="card">
         <div id="login-summary" class="summary"></div>
-        <label>
-          <span>API</span>
-          <input id="api" name="api" placeholder="/spl-banking/enq/customer/portfolio" autocomplete="off">
-        </label>
-        <fieldset class="endpoint">
-          <legend>Endpoint</legend>
-          <div class="parts">
-            <label>
-              <span>URL</span>
-              <input id="ep-base" readonly tabindex="-1" placeholder="Set in Settings">
-            </label>
-            <label>
-              <span>Project</span>
-              <select id="pick-project" data-other-for="conn-project" hidden></select>
-              <input id="conn-project" placeholder="ECOM" autocomplete="off">
-            </label>
-            <label>
-              <span>Repository</span>
-              <select id="pick-repo" data-other-for="conn-repo" hidden></select>
-              <input id="conn-repo" placeholder="ecomm-api" autocomplete="off">
-            </label>
-            <label>
-              <span>Path</span>
-              <input id="pick-path" placeholder="src/main/java/…" autocomplete="off">
-            </label>
-            <label>
-              <span>File</span>
-              <input id="pick-name" placeholder="PortfolioEndpoint" autocomplete="off">
-            </label>
-            <label>
-              <span>Extension</span>
-              <select id="pick-ext-select"></select>
-              <input id="pick-ext" value=".java" placeholder=".ext" autocomplete="off" hidden>
-            </label>
-          </div>
-          <p id="build-msg" class="note" hidden></p>
-          <!-- The joined Endpoint URL; editable. The box's legend already says "Endpoint". -->
-          <input id="location" class="endpoint-url" name="location" required autocomplete="off" aria-label="Endpoint"
-                 title="Joined from the parts above; you can edit it"
-                 placeholder="Bitbucket file URL, or a path such as src/main/java/com/bank/PortfolioEndpoint.java">
-        </fieldset>
+        <!-- API, Endpoint and Controller sections, built from #part-template -->
+        <div id="sections"></div>
         <div class="actions">
           <button id="go" type="submit">Pull from Bitbucket</button>
           <span id="status" role="status"></span>
@@ -73,26 +34,18 @@
       </form>
 
       <section id="result" hidden>
-        <div class="card meta">
-          <div class="meta-head">
-            <div>
-              <div id="file-name" class="file-name"></div>
-              <div id="file-where" class="muted"></div>
-            </div>
-            <div class="buttons">
-              <button id="code-toggle" type="button" hidden>Show whole file</button>
-            <a id="open" target="_blank" rel="noopener">Open in Bitbucket</a>
-              <button id="copy" type="button">Copy</button>
-              <button id="download" type="button">Download</button>
-            </div>
+        <div class="card">
+          <div class="card-title">Flow <span id="flow-state" class="state"></span></div>
+          <div class="table-wrap">
+            <table id="flow">
+              <thead><tr><th>HTTP</th><th>Path</th><th>API</th><th>Endpoint</th><th>Controller</th></tr></thead>
+              <tbody></tbody>
+            </table>
           </div>
-          <div id="match"></div>
-          <details id="eps">
-            <summary>Endpoints found in this file</summary>
-            <table><thead><tr><th>Method</th><th>Path</th><th>Java method</th><th>Line</th></tr></thead><tbody></tbody></table>
-          </details>
+          <p id="flow-note" class="note" hidden></p>
         </div>
-        <div class="card code"><pre id="code"></pre></div>
+        <!-- one code pane per pulled file, built from #pane-template -->
+        <div id="panes"></div>
       </section>
     </section>
 
@@ -133,6 +86,63 @@
       </form>
     </section>
   </main>
+
+  <template id="part-template">
+    <fieldset class="endpoint">
+      <legend></legend>
+      <div class="parts">
+        <label>
+          <span>URL</span>
+          <input class="p-base" readonly tabindex="-1" placeholder="Set in Settings">
+        </label>
+        <label>
+          <span>Project</span>
+          <select class="p-project-select" hidden></select>
+          <input class="p-project" placeholder="ECOM" autocomplete="off">
+        </label>
+        <label>
+          <span>Repository</span>
+          <select class="p-repo-select" hidden></select>
+          <input class="p-repo" placeholder="ecomm-api" autocomplete="off">
+        </label>
+        <label>
+          <span>Path</span>
+          <input class="p-path" placeholder="src/main/java/…" autocomplete="off">
+        </label>
+        <label>
+          <span>File</span>
+          <input class="p-file" autocomplete="off">
+        </label>
+        <label>
+          <span>Extension</span>
+          <select class="p-ext-select"></select>
+          <input class="p-ext" value=".java" placeholder=".ext" autocomplete="off" hidden>
+        </label>
+      </div>
+      <p class="p-msg note" hidden></p>
+      <!-- The joined file URL; editable. The box's legend names it. -->
+      <input class="p-url endpoint-url" autocomplete="off" title="Joined from the parts above; you can edit it"
+             placeholder="Bitbucket file URL, or a path such as src/main/java/com/bank/PortfolioEndpoint.java">
+    </fieldset>
+  </template>
+
+  <template id="pane-template">
+    <div class="card pane">
+      <div class="pane-head">
+        <div>
+          <div class="file-name"><span class="pane-label"></span> · <span class="pane-file"></span></div>
+          <div class="pane-where muted"></div>
+        </div>
+        <div class="buttons">
+          <button class="pane-toggle" type="button" hidden>Show whole file</button>
+          <a class="pane-open" target="_blank" rel="noopener">Open in Bitbucket</a>
+          <button class="pane-copy" type="button">Copy</button>
+        </div>
+      </div>
+      <p class="pane-msg note" hidden></p>
+      <pre class="pane-code"></pre>
+    </div>
+  </template>
 
   <script src="shared/location.js"></script>
   <script src="shared/excel.js"></script>

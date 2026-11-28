@@ -2,8 +2,9 @@
 
 const $ = id => document.getElementById(id);
 const Loc = window.StoryZLocation;
+const Java = window.StoryZJava;
+const XL = window.StoryZExcel;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-let last = null;
 
 // Remember the last inputs per browser, purely as a convenience.
 const store = {
@@ -13,14 +14,10 @@ const store = {
   json(k) { try { return JSON.parse(this.get(k) || 'null'); } catch { return null; } },
 };
 // Login fields remembered between visits. The password is deliberately not in this list.
-const CONN_FIELDS = { baseUrl: 'conn-url', user: 'conn-user', project: 'conn-project', repo: 'conn-repo' };
-store.remove('branch');  // no longer used: the Endpoint has no ?at= branch unless typed into it
-
-$('api').value = store.get('api');
-$('location').value = store.get('location');
+const CONN_FIELDS = { baseUrl: 'conn-url', user: 'conn-user' };
 for (const [k, id] of Object.entries(CONN_FIELDS)) $(id).value = store.get(k);
 
-// ---- Tabs: "eComm" (pull a file) and "Settings" (Bitbucket login, Excel list) ----
+// ---- Tabs: "eComm" (pull and match files) and "Settings" (Bitbucket login, Excel list) ----
 
 const TABS = ['api', 'settings'];
 
@@ -49,12 +46,7 @@ document.addEventListener('click', e => {
 // Start in Settings until a Bitbucket server and user ID have been entered once.
 showTab($('conn-url').value && $('conn-user').value ? 'api' : 'settings');
 
-// Fill any empty fields from .env defaults, if the server has them.
-fetch('/api/config').then(r => r.json()).then(c => {
-  for (const [k, id] of Object.entries(CONN_FIELDS)) if (!$(id).value && c[k]) $(id).value = c[k];
-  updateState();
-  refreshPicks();
-}).catch(() => setConnStatus('Server not reachable. Is StoryZLine running?', true));
+// ---- Login ----
 
 let loggedIn = false;
 
@@ -77,16 +69,20 @@ function updateState() {
     $('login-summary').innerHTML = '<span class="warn">No Bitbucket server set yet.</span>' + settingsLink('Open Settings');
     return;
   }
-  const repo = c.project && c.repo ? ` · ${esc(c.project)}/${esc(c.repo)}` : '';
   const login = loggedIn ? `logged in as <b>${esc(c.user)}</b>`
     : !c.user || !c.password ? '<span class="warn">not logged in</span>'
     : 'login not checked yet';
-  $('login-summary').innerHTML = `Bitbucket: <b>${esc(c.baseUrl)}</b>${repo} · ${login} ·` + settingsLink('Settings');
+  $('login-summary').innerHTML = `Bitbucket: <b>${esc(c.baseUrl)}</b> · ${login} ·` + settingsLink('Settings');
 }
 
 function setConnStatus(text, isError = false) {
   $('conn-status').textContent = text;
   $('conn-status').className = isError ? 'error' : '';
+}
+
+function setStatus(text, isError = false) {
+  $('status').textContent = text;
+  $('status').className = isError ? 'error' : '';
 }
 
 for (const id of ['conn-url', 'conn-user', 'conn-pass']) {
@@ -95,8 +91,6 @@ for (const id of ['conn-url', 'conn-user', 'conn-pass']) {
 // Remember the URL and user ID as they are typed (never the password).
 $('conn-url').addEventListener('input', () => store.set('baseUrl', $('conn-url').value.trim()));
 $('conn-user').addEventListener('input', () => store.set('user', $('conn-user').value.trim()));
-for (const id of ['conn-project', 'conn-repo']) $(id).addEventListener('input', updateState);
-updateState();
 
 async function post(url, body) {
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -118,7 +112,7 @@ $('conn').addEventListener('submit', async e => {
     loggedIn = true;
     setConnStatus('');
     showTab('api');
-    $($('api').value ? 'location' : 'api').focus();
+    $('go').focus();
   } catch (err) {
     loggedIn = false;
     setConnStatus(err.message, true);
@@ -128,184 +122,173 @@ $('conn').addEventListener('submit', async e => {
   }
 });
 
-$('form').addEventListener('submit', async e => {
-  e.preventDefault();
-  const ecommApi = $('api').value.trim();
-  const location = $('location').value.trim();
-  store.set('api', ecommApi);
-  store.set('location', location);
-  const conn = connection();
-  if (!conn.baseUrl || !conn.user || !conn.password) {
-    setStatus('');
-    showTab('settings');
-    setConnStatus(`Fill in the ${!conn.baseUrl ? 'Bitbucket URL' : !conn.user ? 'user ID' : 'password'} to pull files.`, true);
-    $(!conn.baseUrl ? ($('conn-url').hidden ? 'conn-url-select' : 'conn-url') : !conn.user ? 'conn-user' : 'conn-pass').focus();
-    return;
-  }
-  for (const [k, id] of Object.entries(CONN_FIELDS)) store.set(k, conn[k]);
-  setStatus('Pulling…');
-  $('go').disabled = true;
-  try {
-    const loc = Loc.resolveLocation(location, conn);
-    const reply = await post('/api/get', { url: loc.rawUrl, connection: conn });
-    const problem = Loc.responseProblem(reply,
-      `File not found: ${loc.project}/${loc.repo}/${loc.path}${loc.ref ? ` at ${loc.ref}` : ''}.`);
-    if (problem) {
-      if (reply.status === 401) { loggedIn = false; updateState(); }
-      throw new Error(problem);
-    }
-    const data = {
-      ...loc, ecommApi, content: reply.body, bytes: new Blob([reply.body]).size,
-      analysis: window.StoryZJava.analyse(reply.body, ecommApi),
-    };
-    loggedIn = true;
-    updateState();
-    last = data;
-    render(data);
-    setStatus(`Loaded ${data.content.split('\n').length} lines (${(data.bytes / 1024).toFixed(1)} KB).`);
-  } catch (err) {
-    setStatus(err.message, true);
-  } finally {
-    $('go').disabled = false;
-  }
-});
+// ---- The API / Endpoint / Controller sections ----
+// Each joins Bitbucket URL (Settings) / Project / Repository / Path / File / Extension into a
+// file URL, with no ?at= branch (Bitbucket then shows the default branch). With an Excel list
+// loaded, Project and Repository become dropdowns (plus "Other…" to type a value).
 
-function setStatus(text, isError = false) {
-  $('status').textContent = text;
-  $('status').className = isError ? 'error' : '';
-}
-
-function render(d) {
-  const a = d.analysis;
-  $('result').hidden = false;
-  $('file-name').textContent = d.path.split('/').pop();
-  $('file-where').textContent = `${d.project}/${d.repo}${d.ref ? ' @ ' + d.ref : ''} · ${d.path}${a.packageName ? ' · package ' + a.packageName : ''}`;
-  $('open').href = d.browseUrl;
-
-  // Show only the matching methods (merged where they overlap); the whole file when none match.
-  d.sections = [];
-  for (const [s, e] of a.matches.map(m => [m.startLine, m.endLine]).sort((x, y) => x[0] - y[0])) {
-    const prev = d.sections[d.sections.length - 1];
-    if (prev && s <= prev[1] + 1) prev[1] = Math.max(prev[1], e);
-    else d.sections.push([s, e]);
-  }
-  showWhole = !d.sections.length;
-  drawCode(d);
-
-  let html;
-  if (!d.ecommApi) {
-    html = '<span class="muted">No API given: showing the whole file.</span>';
-  } else if (a.matches.length) {
-    html = a.matches.map(m =>
-      `<div><span class="pill ${m.match}">${m.match === 'exact' ? 'Exact match' : 'Matches end of API'}</span>
-        ${esc(m.methods.join(', '))} <code>${esc(m.path)}</code> →
-        <span class="ep-link" data-line="${m.declLine}">${esc((m.className ? m.className + '.' : '') + (m.methodName || '?'))}()</span>
-        <span class="muted">line ${m.declLine}</span></div>`).join('');
-  } else {
-    html = `<span class="pill none">No mapping matched</span> <code>${esc(a.normalisedApi)}</code>` +
-      (a.textHits.length ? ` <span class="muted">· text found on line(s) ${a.textHits.slice(0, 20).map(n => `<span class="ep-link" data-line="${n}">${n}</span>`).join(', ')}</span>` : '');
-  }
-  $('match').innerHTML = html;
-
-  const tbody = $('eps').querySelector('tbody');
-  tbody.innerHTML = a.endpoints.length
-    ? a.endpoints.flatMap(ep => ep.paths.map(p =>
-        `<tr><td>${esc(ep.methods.join(', '))}</td><td><code>${esc(p)}</code></td>
-         <td><span class="ep-link" data-line="${ep.declLine}">${esc(ep.methodName || '?')}</span></td><td>${ep.declLine}</td></tr>`)).join('')
-    : '<tr><td colspan="4" class="muted">No Spring or JAX-RS mappings found.</td></tr>';
-  $('eps').querySelector('summary').textContent = `Endpoints found in this file (${a.endpoints.length})`;
-
-  const first = a.matches[0] ? a.matches[0].declLine : a.textHits[0];
-  if (first) jump(first, false);
-}
-
-let showWhole = false;
-
-// Draws the code: the found sections with "⋯" between them, or the whole file.
-function drawCode(d) {
-  const a = d.analysis;
-  const lines = d.content.split(/\r?\n/);
-  const matchLines = new Set(a.matches.flatMap(m => [m.line, m.declLine]));
-  const hitLines = new Set(a.textHits);
-  const line = n => {
-    const cls = matchLines.has(n) ? ' match' : hitLines.has(n) ? ' hit' : '';
-    return `<span class="ln${cls}" id="L${n}" data-n="${n}">${esc(lines[n - 1]) || ' '}</span>`;
-  };
-  const range = (s, e) => Array.from({ length: e - s + 1 }, (_, i) => line(s + i)).join('');
-  $('code').innerHTML = showWhole
-    ? range(1, lines.length)
-    : d.sections.map(([s, e]) => range(s, e)).join('<span class="gap">⋯</span>');
-  $('code-toggle').hidden = !d.sections.length;
-  $('code-toggle').textContent = showWhole ? 'Show found section only' : 'Show whole file';
-}
-
-// The text currently shown: the found sections, or the whole file.
-function shownText(d) {
-  if (showWhole) return d.content;
-  const lines = d.content.split(/\r?\n/);
-  return d.sections.map(([s, e]) => lines.slice(s - 1, e).join('\n')).join('\n\n');
-}
-
-$('code-toggle').addEventListener('click', () => {
-  if (!last) return;
-  showWhole = !showWhole;
-  drawCode(last);
-  const first = last.analysis.matches[0];
-  if (first) jump(first.declLine, false);
-});
-
-function jump(n, flash = true) {
-  if (!$('L' + n) && last && !showWhole) {  // outside the found sections: open the whole file
-    showWhole = true;
-    drawCode(last);
-  }
-  const el = $('L' + n);
-  if (!el) return;
-  const pre = $('code');
-  pre.scrollTop = el.offsetTop - pre.clientHeight / 3;
-  if (flash) {
-    el.classList.add('flash');
-    setTimeout(() => el.classList.remove('flash'), 1200);
-    pre.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
-}
-
-document.addEventListener('click', e => {
-  const t = e.target.closest('.ep-link');
-  if (t) jump(Number(t.dataset.line));
-});
-
-$('copy').addEventListener('click', async () => {
-  if (!last) return;
-  try { await navigator.clipboard.writeText(shownText(last)); setStatus(showWhole ? 'Whole file copied.' : 'Found section copied.'); }
-  catch { setStatus('Clipboard not available in this browser.', true); }
-});
-
-$('download').addEventListener('click', () => {
-  if (!last) return;
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([last.content], { type: 'text/x-java' }));
-  a.download = last.path.split('/').pop();
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
-
-// ---- Endpoint parts and the Excel list ------------------------------------------------
-// The Endpoint is joined from: Bitbucket URL (Settings) / Project key / Repository / Path /
-// File name / File extension, with no ?at= branch (Bitbucket then shows the default branch).
-// With an Excel list loaded, project and repository become dropdowns (plus "Other…" to type a
-// value); Path is always typed. The list (no passwords) and the parts are remembered in this browser.
-
-const XL = window.StoryZExcel;
-const LEVELS = ['project', 'repo'];                          // narrowed in this order
-const INPUT = { project: 'conn-project', repo: 'conn-repo' };
 const OTHER = '__other__';
+const LEVELS = ['project', 'repo'];  // narrowed in this order
 const EXTENSIONS = ['.java', '.xml', '.properties', '.yml', '.yaml', '.json', '.sql', '.wsdl', '.xsd',
   '.kt', '.groovy', '.gradle', '.jsp', '.txt'];
 let pickEntries = [];
 
 const sameUrl = (a, b) => String(a || '').trim().replace(/\/+$/, '').toLowerCase() ===
   String(b || '').trim().replace(/\/+$/, '').toLowerCase();
+
+class Part {
+  constructor(key, label, filePlaceholder) {
+    this.key = key;
+    this.label = label;
+    this.el = $('part-template').content.firstElementChild.cloneNode(true);
+    this.el.querySelector('legend').textContent = label;
+    this.$('file').placeholder = filePlaceholder;
+    this.$('url').setAttribute('aria-label', label);
+    this.$('ext-select').innerHTML = EXTENSIONS.map(x => `<option value="${x}">${x}</option>`).join('') +
+      `<option value="">(no extension)</option><option value="${OTHER}">Other…</option>`;
+    $('sections').append(this.el);
+
+    for (const k of LEVELS) {
+      this.$(k + '-select').addEventListener('change', e => {
+        const input = this.$(k);
+        if (e.target.value === OTHER) {
+          e.target.dataset.other = '1';
+          input.value = '';
+          input.hidden = false;
+          input.focus();
+        } else {
+          delete e.target.dataset.other;
+          input.value = e.target.value;
+        }
+        this.resetAfter(k);
+        this.refresh();
+      });
+      this.$(k).addEventListener('input', () => this.refresh());
+    }
+    this.$('ext-select').addEventListener('change', e => {
+      if (e.target.value === OTHER) {
+        e.target.dataset.other = '1';
+        this.$('ext').value = '';
+        this.$('ext').hidden = false;
+        this.$('ext').focus();
+      } else {
+        delete e.target.dataset.other;
+        this.$('ext').value = e.target.value;
+        this.$('ext').hidden = true;
+      }
+      this.update();
+    });
+    for (const k of ['path', 'file', 'ext']) this.$(k).addEventListener('input', () => this.update());
+  }
+
+  $(name) { return this.el.querySelector('.p-' + name); }
+  get url() { return this.$('url').value.trim(); }
+
+  // The settings used to read this part's URL (its own project and repository).
+  cfg(conn) { return { ...conn, project: this.$('project').value.trim(), repo: this.$('repo').value.trim() }; }
+
+  restore(saved) {
+    this.$('project').value = saved.project || '';
+    this.$('repo').value = saved.repo || '';
+    this.$('path').value = saved.path || '';
+    this.$('file').value = saved.fileName || '';
+    if (typeof saved.extension === 'string') this.$('ext').value = saved.extension;
+    // Show the extension in the dropdown, or under "Other…" when it isn't listed.
+    let v = this.$('ext').value.trim().toLowerCase();
+    if (v && !v.startsWith('.')) v = '.' + v;
+    const sel = this.$('ext-select');
+    sel.value = v === '' || EXTENSIONS.includes(v) ? v : OTHER;
+    this.$('ext').hidden = sel.value !== OTHER;
+  }
+
+  save() {
+    store.set('part.' + this.key, JSON.stringify({
+      project: this.$('project').value.trim(), repo: this.$('repo').value.trim(),
+      path: this.$('path').value, fileName: this.$('file').value, extension: this.$('ext').value,
+    }));
+  }
+
+  // Clears the levels after `key`, so they fall back to the first value that fits.
+  resetAfter(key) {
+    for (const k of LEVELS.slice(LEVELS.indexOf(key) + 1)) {
+      this.$(k).value = '';
+      delete this.$(k + '-select').dataset.other;
+    }
+  }
+
+  // Fills Project and Repository from the Excel rows for the Bitbucket URL, then rebuilds the URL.
+  refresh() {
+    this.$('base').value = $('conn-url').value.trim();
+    this.$('base').title = this.$('base').value;  // the box is narrow: show the whole URL on hover
+    let rows = pickEntries.filter(e => sameUrl(e.baseUrl, $('conn-url').value));
+    for (const k of LEVELS) {
+      const sel = this.$(k + '-select');
+      const input = this.$(k);
+      const values = [...new Set(rows.map(e => e[k]).filter(Boolean))];
+      const v = input.value.trim();
+      if (values.length) {
+        sel.innerHTML = values.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join('') +
+          `<option value="${OTHER}">Other…</option>`;
+        if (values.includes(v)) {
+          sel.value = v;
+          delete sel.dataset.other;
+        } else if (v || sel.dataset.other) {
+          sel.value = OTHER;
+        } else {
+          input.value = values[0];
+          sel.value = values[0];
+        }
+        sel.hidden = false;
+        input.hidden = sel.value !== OTHER;
+        rows = rows.filter(e => e[k] === input.value.trim());
+      } else {
+        sel.hidden = true;
+        input.hidden = false;
+      }
+    }
+    this.update();
+  }
+
+  // Rebuilds the joined URL. It stays as it is (and can be edited) until a part changes.
+  update() {
+    this.save();
+    const parts = {
+      baseUrl: $('conn-url').value.trim(), project: this.$('project').value, repo: this.$('repo').value,
+      path: this.$('path').value, fileName: this.$('file').value, extension: this.$('ext').value,
+    };
+    const msg = this.$('msg');
+    try {
+      this.$('url').value = Loc.buildFileUrl(parts);
+      msg.hidden = true;
+    } catch (err) {
+      if (!parts.fileName.trim()) this.$('url').value = '';  // no file: nothing to pull for this part
+      msg.textContent = err.message;
+      msg.hidden = !(parts.path.trim() || parts.fileName.trim());  // no nagging before anything is typed
+    }
+  }
+}
+
+// Saved values from before the three sections existed fill the Endpoint section once.
+if (!store.json('part.endpoint') && (store.json('endpointParts') || store.get('project'))) {
+  const old = store.json('endpointParts') || {};
+  store.set('part.endpoint', JSON.stringify({ ...old, project: store.get('project'), repo: store.get('repo') }));
+}
+for (const k of ['endpointParts', 'project', 'repo', 'location', 'api', 'branch', 'pickChoice']) store.remove(k);
+
+const parts = [
+  new Part('api', 'API', 'CustomerPortfolioApi'),
+  new Part('endpoint', 'Endpoint', 'CustomerPortfolioEndpoint'),
+  new Part('controller', 'Controller', 'CustomerPortfolioController'),
+];
+// A new section starts with the Endpoint's project, repository and path.
+const endpointSaved = store.json('part.endpoint') || {};
+for (const p of parts) {
+  const saved = store.json('part.' + p.key) || { project: endpointSaved.project, repo: endpointSaved.repo, path: endpointSaved.path };
+  p.restore(saved);
+}
+const refreshAll = () => parts.forEach(p => p.refresh());
+
+// ---- Excel list (Settings) ----
 
 function setPickStatus(text, isError = false) {
   $('pick-status').textContent = text;
@@ -337,116 +320,14 @@ function showUrlChoices(fromNewFile) {
   $('conn-url').hidden = Boolean(match);
 }
 
-// Clears the levels after `key`, so they fall back to the first value that fits.
-function resetAfter(key) {
-  for (const k of LEVELS.slice(LEVELS.indexOf(key) + 1)) {
-    $(INPUT[k]).value = '';
-    delete $('pick-' + k).dataset.other;
-  }
-}
-
-// Fills the dropdowns from the Excel rows that fit the Bitbucket URL and the levels before
-// each one, then rebuilds the Endpoint.
-function refreshPicks() {
-  $('ep-base').value = $('conn-url').value.trim();
-  $('ep-base').title = $('ep-base').value;  // the box is narrow: show the whole URL on hover
-  let rows = pickEntries.filter(e => sameUrl(e.baseUrl, $('conn-url').value));
-  for (const k of LEVELS) {
-    const sel = $('pick-' + k);
-    const input = $(INPUT[k]);
-    const values = [...new Set(rows.map(e => e[k]).filter(Boolean))];
-    const v = input.value.trim();
-    if (values.length) {
-      sel.innerHTML = values.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join('') +
-        `<option value="${OTHER}">Other…</option>`;
-      if (values.includes(v)) {
-        sel.value = v;
-        delete sel.dataset.other;
-      } else if (v || sel.dataset.other) {
-        sel.value = OTHER;
-      } else {
-        input.value = values[0];
-        sel.value = values[0];
-      }
-      sel.hidden = false;
-      input.hidden = sel.value !== OTHER;
-      rows = rows.filter(e => e[k] === input.value.trim());
-    } else {
-      sel.hidden = true;
-      input.hidden = false;
-    }
-    store.set(k, input.value.trim());
-  }
-
-  updateState();
-  updateEndpoint();
-}
-
-// File extension: a dropdown of common extensions, "(no extension)", and "Other…" to type one.
-// The text box #pick-ext always holds the value used.
-function showExtension() {
-  const sel = $('pick-ext-select');
-  if (!sel.options.length) {
-    sel.innerHTML = EXTENSIONS.map(x => `<option value="${x}">${x}</option>`).join('') +
-      `<option value="">(no extension)</option><option value="${OTHER}">Other…</option>`;
-  }
-  let v = $('pick-ext').value.trim().toLowerCase();
-  if (v && !v.startsWith('.')) v = '.' + v;
-  const known = v === '' || EXTENSIONS.includes(v);
-  sel.value = known && !sel.dataset.other ? v : OTHER;
-  $('pick-ext').hidden = sel.value !== OTHER;
-}
-
-$('pick-ext-select').addEventListener('change', e => {
-  if (e.target.value === OTHER) {
-    e.target.dataset.other = '1';
-    $('pick-ext').value = '';
-    $('pick-ext').hidden = false;
-    $('pick-ext').focus();
-  } else {
-    delete e.target.dataset.other;
-    $('pick-ext').value = e.target.value;
-    $('pick-ext').hidden = true;
-  }
-  updateEndpoint();
-});
-
-function endpointParts() {
-  return {
-    baseUrl: $('conn-url').value.trim(),
-    project: $('conn-project').value,
-    repo: $('conn-repo').value,
-    path: $('pick-path').value,
-    fileName: $('pick-name').value,
-    extension: $('pick-ext').value,
-  };
-}
-
-// Rebuilds the Endpoint from its parts. It stays as it is (and can be edited) until a part changes.
-function updateEndpoint() {
-  const parts = endpointParts();
-  store.set('endpointParts', JSON.stringify({ path: parts.path, fileName: parts.fileName, extension: parts.extension }));
-  const msg = $('build-msg');
-  const anyPart = parts.path.trim() || parts.fileName.trim();
-  try {
-    const url = Loc.buildFileUrl(parts);
-    $('location').value = url;
-    store.set('location', url);
-    msg.hidden = true;
-  } catch (err) {
-    msg.textContent = err.message;
-    msg.hidden = !anyPart;  // no nagging before anything has been typed
-  }
-}
-
 function loadPickList(list, fromNewFile = false) {
   pickEntries = list.entries;
   $('pick-clear').hidden = false;
   $('pick-state').textContent = `${list.entries.length} row${list.entries.length === 1 ? '' : 's'} from ${list.source}`;
   $('pick-state').className = 'state ok';
   showUrlChoices(fromNewFile);
-  if (fromNewFile) for (const k of LEVELS) $(INPUT[k]).value = '';
-  refreshPicks();
+  if (fromNewFile) parts.forEach(p => p.resetAfter('url'));
+  refreshAll();
 }
 
 function saveFile(name, text, type) {
@@ -485,30 +366,10 @@ $('conn-url-select').addEventListener('change', e => {
     $('conn-url').hidden = true;
     setLoginUrl(e.target.value);
   }
-  resetAfter('url');  // a new server: start again from its first project and repository
-  refreshPicks();
+  parts.forEach(p => p.resetAfter('url'));  // a new server: start again from its first project and repository
+  refreshAll();
 });
-$('conn-url').addEventListener('input', refreshPicks);
-
-for (const k of LEVELS) {
-  $('pick-' + k).addEventListener('change', e => {
-    const input = $(INPUT[k]);
-    if (e.target.value === OTHER) {
-      e.target.dataset.other = '1';
-      input.value = '';
-      input.hidden = false;
-      input.focus();
-    } else {
-      delete e.target.dataset.other;
-      input.value = e.target.value;
-    }
-    resetAfter(k);
-    refreshPicks();
-  });
-  $(INPUT[k]).addEventListener('input', refreshPicks);
-}
-
-for (const id of ['pick-path', 'pick-name', 'pick-ext']) $(id).addEventListener('input', updateEndpoint);
+$('conn-url').addEventListener('input', refreshAll);
 
 $('pick-template').addEventListener('click', () => saveFile('storyzline-list.csv', XL.TEMPLATE_CSV, 'text/csv'));
 
@@ -519,16 +380,218 @@ $('pick-clear').addEventListener('click', () => {
   $('pick-state').textContent = '';
   $('conn-url-select').hidden = true;
   $('conn-url').hidden = false;
-  refreshPicks();
+  refreshAll();
   setPickStatus('List forgotten. Load another Excel file any time.');
 });
 
-const savedParts = store.json('endpointParts') || {};
-$('pick-path').value = savedParts.path || '';
-$('pick-name').value = savedParts.fileName || '';
-if (typeof savedParts.extension === 'string') $('pick-ext').value = savedParts.extension;
-showExtension();
+// ---- Pull the files and match API -> Endpoint -> Controller ----
+
+let view = null;  // { files, flows, selected, panes, whole }
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const conn = connection();
+  if (!conn.baseUrl || !conn.user || !conn.password) {
+    setStatus('');
+    showTab('settings');
+    setConnStatus(`Fill in the ${!conn.baseUrl ? 'Bitbucket URL' : !conn.user ? 'user ID' : 'password'} to pull files.`, true);
+    $(!conn.baseUrl ? ($('conn-url').hidden ? 'conn-url-select' : 'conn-url') : !conn.user ? 'conn-user' : 'conn-pass').focus();
+    return;
+  }
+  const chosen = parts.filter(p => p.url);
+  if (!chosen.length) {
+    setStatus('Fill in File in at least one of API, Endpoint and Controller.', true);
+    parts[0].$('file').focus();
+    return;
+  }
+  setStatus(`Pulling ${chosen.length} file${chosen.length === 1 ? '' : 's'}…`);
+  $('go').disabled = true;
+  try {
+    const results = await Promise.all(chosen.map(async p => {
+      let loc;
+      try {
+        loc = Loc.resolveLocation(p.url, p.cfg(conn));
+        const reply = await post('/api/get', { url: loc.rawUrl, connection: conn });
+        const problem = Loc.responseProblem(reply,
+          `File not found: ${loc.project}/${loc.repo}/${loc.path}${loc.ref ? ` at ${loc.ref}` : ''}.`);
+        if (problem) return { part: p, loc, error: problem, status: reply.status };
+        return { part: p, loc, content: reply.body };
+      } catch (err) {
+        return { part: p, loc, error: err.message };
+      }
+    }));
+    const ok = results.filter(r => r.content != null);
+    if (ok.length) loggedIn = true;
+    if (results.some(r => r.status === 401)) loggedIn = false;
+    updateState();
+    render(results);
+    const failed = results.filter(r => r.error);
+    setStatus(failed.length
+      ? `Pulled ${ok.length} of ${results.length} files. ${failed.map(r => `${r.part.label}: ${r.error}`).join(' ')}`
+      : `Pulled ${ok.length} file${ok.length === 1 ? '' : 's'}.`, failed.length > 0);
+  } finally {
+    $('go').disabled = false;
+  }
+});
+
+function render(results) {
+  const files = Object.fromEntries(results.map(r => [r.part.key, r]));
+  const src = k => (files[k] && files[k].content != null ? files[k].content : null);
+  const flows = Java.linkFlows(src('api'), src('endpoint'), src('controller'));
+  view = { files, flows, selected: 0, panes: {}, whole: {} };
+  $('result').hidden = false;
+
+  const name = m => (m ? `${esc(m.name)}()` : '<span class="none">—</span>');
+  $('flow').querySelector('tbody').innerHTML = flows.rows.map((r, i) => `
+    <tr data-row="${i}" tabindex="0">
+      <td>${esc(r.methods.join(', ')) || '<span class="none">—</span>'}</td>
+      <td>${r.paths.map(p => `<code>${esc(p)}</code>`).join('<br>') || '<span class="none">—</span>'}</td>
+      <td>${src('api') != null ? name(r.api) : '<span class="none">not pulled</span>'}</td>
+      <td>${src('endpoint') != null ? name(r.endpoint) + (r.endpoint && r.endpoint.how ? ` <small>(${esc(r.endpoint.how)})</small>` : '') : '<span class="none">not pulled</span>'}</td>
+      <td>${src('controller') != null ? (r.controller.map(c => `${esc(c.name)}()`).join(', ') || '<span class="none">—</span>') : '<span class="none">not pulled</span>'}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="none">No methods found to match.</td></tr>';
+
+  const linked = flows.rows.filter(r => r.endpoint && r.controller.length).length;
+  $('flow-state').textContent = flows.rows.length ? `${flows.rows.length} row${flows.rows.length === 1 ? '' : 's'}, ${linked} linked end to end` : '';
+  $('flow-state').className = 'state' + (linked ? ' ok' : '');
+  const notes = [];
+  if (src('api') == null && src('endpoint') != null) notes.push('No API file: the rows start from the Endpoint\'s mappings.');
+  if (src('controller') != null && src('endpoint') != null && !flows.rows.some(r => r.controller.length)) {
+    notes.push(`No calls to ${flows.classes.controller || 'the Controller'} were found in the Endpoint methods.`);
+  }
+  $('flow-note').textContent = notes.join(' ');
+  $('flow-note').hidden = !notes.length;
+
+  $('panes').innerHTML = '';
+  for (const p of parts) {
+    if (!files[p.key]) continue;
+    const pane = $('pane-template').content.firstElementChild.cloneNode(true);
+    pane.dataset.pane = p.key;
+    $('panes').append(pane);
+    view.panes[p.key] = pane;
+  }
+  select(0);
+}
+
+function select(i) {
+  if (!view) return;
+  view.selected = i;
+  view.whole = {};
+  for (const tr of $('flow').querySelectorAll('tbody tr[data-row]')) tr.classList.toggle('sel', Number(tr.dataset.row) === i);
+  for (const key of Object.keys(view.panes)) drawPane(key);
+}
+
+// The line ranges and highlighted lines of a row in one pane.
+function rowParts(key, row) {
+  if (!row) return { ranges: [], marks: [] };
+  const methods = key === 'api' ? [row.api] : key === 'endpoint' ? [row.endpoint] : row.controller;
+  const found = methods.filter(Boolean);
+  const ranges = [];
+  for (const [s, e] of found.map(m => [m.startLine, m.endLine]).sort((a, b) => a[0] - b[0])) {
+    const prev = ranges[ranges.length - 1];
+    if (prev && s <= prev[1] + 1) prev[1] = Math.max(prev[1], e);
+    else ranges.push([s, e]);
+  }
+  const marks = found.map(m => m.declLine).concat(key === 'endpoint' ? row.callLines : []);
+  return { ranges, marks };
+}
+
+function drawPane(key) {
+  const f = view.files[key];
+  const pane = view.panes[key];
+  const q = cls => pane.querySelector('.' + cls);
+  q('pane-label').textContent = f.part.label;
+  q('pane-file').textContent = f.loc ? f.loc.path.split('/').pop() : f.part.url;
+  q('pane-where').textContent = f.loc ? `${f.loc.project}/${f.loc.repo} · ${f.loc.path}` : '';
+  q('pane-open').hidden = !f.loc;
+  if (f.loc) q('pane-open').href = f.loc.browseUrl;
+  const msg = q('pane-msg');
+
+  if (f.error) {
+    msg.textContent = f.error;
+    msg.className = 'pane-msg note error';
+    msg.hidden = false;
+    q('pane-code').innerHTML = '';
+    q('pane-toggle').hidden = true;
+    q('pane-copy').hidden = true;
+    return;
+  }
+
+  const row = view.flows.rows[view.selected];
+  const { ranges, marks } = rowParts(key, row);
+  const whole = view.whole[key] || !ranges.length;
+  msg.className = 'pane-msg note';
+  msg.textContent = row && !ranges.length ? `No ${f.part.label} method for this row: showing the whole file.` : '';
+  msg.hidden = !msg.textContent;
+
+  const lines = f.content.split(/\r?\n/);
+  const markSet = new Set(marks);
+  const line = n => `<span class="ln${markSet.has(n) ? ' match' : ''}" data-n="${n}">${esc(lines[n - 1]) || ' '}</span>`;
+  const range = (s, e) => Array.from({ length: e - s + 1 }, (_, i) => line(s + i)).join('');
+  q('pane-code').innerHTML = whole ? range(1, lines.length) : ranges.map(([s, e]) => range(s, e)).join('<span class="gap">⋯</span>');
+  q('pane-code').scrollTop = 0;
+  q('pane-toggle').hidden = !ranges.length;
+  q('pane-toggle').textContent = whole ? 'Show found section only' : 'Show whole file';
+  q('pane-copy').hidden = false;
+  // Scroll the whole file to the first highlighted line.
+  if (whole && marks.length) {
+    const el = q('pane-code').querySelector(`[data-n="${Math.min(...marks)}"]`);
+    if (el) q('pane-code').scrollTop = el.offsetTop - 40;
+  }
+}
+
+// The text a pane shows: its found sections, or the whole file.
+function shownText(key) {
+  const f = view.files[key];
+  const { ranges } = rowParts(key, view.flows.rows[view.selected]);
+  if (view.whole[key] || !ranges.length) return f.content;
+  const lines = f.content.split(/\r?\n/);
+  return ranges.map(([s, e]) => lines.slice(s - 1, e).join('\n')).join('\n\n');
+}
+
+$('flow').addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-row]');
+  if (tr) select(Number(tr.dataset.row));
+});
+$('flow').addEventListener('keydown', e => {
+  const tr = e.target.closest('tr[data-row]');
+  if (!tr) return;
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(Number(tr.dataset.row)); }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const next = e.key === 'ArrowDown' ? tr.nextElementSibling : tr.previousElementSibling;
+    if (next && next.dataset.row) { next.focus(); select(Number(next.dataset.row)); }
+  }
+});
+
+$('panes').addEventListener('click', async e => {
+  const pane = e.target.closest('.pane');
+  if (!pane || !view) return;
+  const key = pane.dataset.pane;
+  if (e.target.closest('.pane-toggle')) {
+    const { ranges } = rowParts(key, view.flows.rows[view.selected]);
+    view.whole[key] = !(view.whole[key] || !ranges.length);
+    drawPane(key);
+  } else if (e.target.closest('.pane-copy')) {
+    try {
+      await navigator.clipboard.writeText(shownText(key));
+      setStatus(`${view.files[key].part.label} copied.`);
+    } catch {
+      setStatus('Clipboard not available in this browser.', true);
+    }
+  }
+});
+
+// ---- Start-up ----
+
+updateState();
+// Fill any empty login fields from .env defaults, if the server has them.
+fetch('/api/config').then(r => r.json()).then(c => {
+  for (const [k, id] of Object.entries(CONN_FIELDS)) if (!$(id).value && c[k]) $(id).value = c[k];
+  updateState();
+  refreshAll();
+}).catch(() => setConnStatus('Server not reachable. Is StoryZLine running?', true));
 
 const savedList = store.json('pickList');
 if (savedList && Array.isArray(savedList.entries) && savedList.entries.length) loadPickList(savedList);
-else refreshPicks();
+else refreshAll();

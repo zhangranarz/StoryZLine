@@ -1,6 +1,6 @@
 # StoryZLine
 
-A small local web tool: enter an eComm **API** and its **Endpoint** (the Java file's location), and it pulls the Java source from Bitbucket. It then shows the source with the matching endpoint method highlighted.
+A small local web tool for tracing an eComm API through its code. Give it the locations of three Java files in Bitbucket, the **API** interface, the **Endpoint** and the **Controller**, and it pulls all three and matches them together: each API method, the Endpoint method that serves it, and the Controller method(s) that Endpoint calls.
 
 ## Setup
 
@@ -18,7 +18,7 @@ If your company uses its own TLS certificate authority, start Node with `NODE_EX
 
 ## Try it without Bitbucket
 
-`samples/` holds two demo Endpoint files and `tools/mock_bitbucket.py`, a pretend Bitbucket that serves them (Python only). See [samples/README.md](samples/README.md) for the steps and the API values to try.
+`samples/` holds a demo API interface, Endpoint and Controller (plus a JAX-RS example) and `tools/mock_bitbucket.py`, a pretend Bitbucket that serves them (Python only). See [samples/README.md](samples/README.md) for the steps.
 
 ## Running on another computer
 
@@ -58,7 +58,7 @@ Instead of typing Bitbucket details, keep them in an Excel sheet. The first shee
 One row per repository. An empty **Bitbucket URL** or **Project key** cell means "same as the row above", so you only need to write them once (merged cells work too). **Download** in Settings gives you a template CSV to start from.
 
 1. In the **⚙ Settings** tab, click **Load** and choose the `.xlsx` (or `.csv`) file. It is read in your browser only, and remembered there until you click **Forget**. The **Bitbucket URL** is filled in from it (a dropdown if the sheet has several; **Other URL…** to type one).
-2. In the **eComm** tab, fill in the **Endpoint** box:
+2. In the **eComm** tab, fill in the **API**, **Endpoint** and **Controller** boxes. Each has the same parts:
 
    | Part | Input |
    |---|---|
@@ -68,24 +68,29 @@ One row per repository. An empty **Bitbucket URL** or **Project key** cell means
    | File | the file name, text |
    | Extension | dropdown: `.java` (default), `.xml`, `.properties`, `.yml`, `.yaml`, `.json`, `.sql`, `.wsdl`, `.xsd`, `.kt`, `.groovy`, `.gradle`, `.jsp`, `.txt`, *(no extension)*, or **Other…** to type one; added unless File already ends with it |
 
-3. The last line of the **Endpoint** box shows the joined Bitbucket file URL and updates as you change the parts. You can edit it before pulling:
+3. The last line of each box shows the joined Bitbucket file URL and updates as you change the parts. You can edit it before pulling:
    `URL /projects/ Project /repos/ Repository /browse/ Path / File Extension`
 
-   No branch is added, so Bitbucket uses the repository's default branch. To pull another branch, add `?at=<branch>` to the end of the Endpoint yourself.
+   No branch is added, so Bitbucket uses the repository's default branch. To pull another branch, add `?at=<branch>` to the end yourself. A box with no File is skipped.
 4. Click **Pull from Bitbucket** (or press Enter).
 
 Old `.xls` files aren't supported. In Excel, use *File > Save As > Excel Workbook (.xlsx)* or CSV.
 
 ## What you can enter
 
-**Endpoint** (built from the parts above it, or typed/pasted), any of:
+Each box's file URL (built from its parts, or typed/pasted) can be any of:
 - A Bitbucket Server URL copied from the browser: `https://git.bank.com/projects/ECOM/repos/ecomm-api/browse/src/main/java/.../PortfolioEndpoint.java?at=refs/heads/develop`
 - A Bitbucket Cloud URL: `https://bitbucket.org/<workspace>/<repo>/src/<branch>/<path>`
-- A plain path inside the Project and Repository chosen above: `src/main/java/.../PortfolioEndpoint.java`
+- A plain path inside that box's Project and Repository: `src/main/java/.../PortfolioEndpoint.java`
 
-**API** (the eCommAPI): the API path or full URL, e.g. `/spl-banking/enq/customer/portfolio/{id}`. StoryZLine finds the Spring (`@RequestMapping`, `@GetMapping`, …) and JAX-RS (`@Path`, `@GET`, …) mappings in the file. It joins class and method paths and matches them against the eCommAPI, allowing for a context-path prefix and `{path}` variables. Lines that only mention the API text are highlighted too.
+## How the three files are matched
 
-The result shows **only the matching method(s)**, from the comments and annotations above each one down to its closing `}`, with `⋯` between them. **Show whole file** switches to the complete file (and back). **Copy** copies what is shown; **Download** saves the whole file. If nothing matches, or no API is given, the whole file is shown.
+- **API**: every method in the API file with a Spring (`@RequestMapping`, `@GetMapping`, …) or JAX-RS (`@Path`, `@GET`, …) mapping is one row. Class and method paths are joined.
+- **API → Endpoint**: the Endpoint method with the same mapping path (and a compatible HTTP method; `{variables}` may be named differently). If there is none, the Endpoint method with the same name, as when the Endpoint implements the API interface without repeating its annotations. The table says which (*same path* / *same method name*).
+- **Endpoint → Controller**: calls inside that Endpoint method on a field, parameter or variable whose type is the Controller class (e.g. `controller.savePortfolio(…)`). If the Endpoint has no such field, calls to any method the Controller has. One Endpoint method can lead to several Controller methods.
+- Without an API file, the rows start from the Endpoint's own mappings.
+
+After **Pull from Bitbucket**, the **Flow** table lists the rows. Click a row (or use the arrow keys) to show its three methods in the code panes below: each pane shows only the matching method(s), from the comments and annotations above down to the closing `}`, with the declaration and the Controller calls highlighted. **Show whole file** switches a pane to the complete file; **Copy** copies what the pane shows.
 
 ## Security
 
