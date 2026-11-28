@@ -1,6 +1,6 @@
 # Demo kit
 
-Try StoryZLine without a real Bitbucket: a pretend Bitbucket serves the sample Route, Endpoint, API, Controller, Command and Builder files in this folder.
+Try StoryZLine without a real Bitbucket: a pretend Bitbucket serves the sample Route, Endpoint, API, Controller, Command and Validator files in this folder.
 
 ## Start
 
@@ -10,7 +10,7 @@ Try StoryZLine without a real Bitbucket: a pretend Bitbucket serves the sample R
 
 ## Try it in the eComm tab
 
-Fill in the six boxes (Project `DEMO`, Repository `ecomm-services`):
+Fill in the five boxes (Project `DEMO`, Repository `ecomm-services`):
 
 | Box | Path | File(s) |
 |---|---|---|
@@ -19,23 +19,22 @@ Fill in the six boxes (Project `DEMO`, Repository `ecomm-services`):
 | APIController | `src/main/java/com/example/ecomm/enq/controller` | API File `CustomerPortfolioApi`, Controller File `CustomerPortfolioController` |
 | Command | `src/main/java/com/example/ecomm/enq/command` | File `CustomerPortfolioCommand` |
 | Validator | `src/main/java/com/example/ecomm/enq/validator` | File `PortfolioRequestValidator` |
-| Builder | `src/main/java/com/example/ecomm/enq/builder` | File `PortfolioResponseBuilder` |
 
 Then type an **API** and click **Pull from Bitbucket**:
 
-| API | Flow rows: Endpoint → API → Controller (→ Command, Builder) |
+| API | Flow rows: Endpoint → API → Controller (→ Command, Validator) |
 |---|---|
-| `/spl-banking/enq/customer/portfolio/12345` | `getPortfolio()` → `getPortfolio()` → `getPortfolio()` → `enquire()`, Builder `portfolio()`; and `updatePortfolio()` (POST) → `validate()`, `savePortfolio()` → `validate()`, `savePortfolio()` → `update()`, Builder `noContent()` |
+| `/spl-banking/enq/customer/portfolio/12345` | `getPortfolio()` → `getPortfolio()` → `getPortfolio()` → `enquire()`; and `updatePortfolio()` (POST) → `validate()`, `savePortfolio()` → `validate()`, `savePortfolio()` → `update()`, Validator `checkPortfolio()`, `checkHoldings()` |
 | `/enq/customer/overview` | `summary()` → `summary()` → `summary()`, exact match |
 | `/enq/customer/portfolio/12345/export` | `exportPortfolio()` → `exportCsv()` → `exportCsv()` (the names differ along the way) |
 | `/enq/customer/unknown` | none: the whole Endpoint file is shown |
 | *(empty)* | every mapping in the Endpoint |
 
-The **Process** diagram at the top of the results draws both rows: Request → Endpoint → route → API → Controller → Command, with dashed arrows to the Builder. Click a row in Flow, or a box, to highlight one path.
+The **Process** diagram at the top of the results draws both rows: Request → Endpoint → route → API → Controller → Command, and on to the Validator for the POST. Click a row in Flow, or a box, to highlight one path.
 
 `portfolio-routes.xml` is a Camel-style route file: each `<route>` starts `from` `direct:ecomm.portfolio_<Endpoint method>`. So the GET row's route is `ecomm.portfolio.get` (`_getPortfolio`) and the POST row's `ecomm.portfolio.update` (`_updatePortfolio`); the Route pane shows only the selected row's `<route>` section. `_getPortfolioHistory` and a commented-out route are deliberately not matched. (`gateway-routes.xml` is an older path-pattern style file, used when no route matches by name.)
 
-How the demo is wired: the Endpoint holds a `CustomerPortfolioApi portfolioApi` field and calls it; `CustomerPortfolioController implements CustomerPortfolioApi` and calls `CustomerPortfolioCommand`, whose methods each send one host request (the made-up service codes are in its `SERVICE_` constants). The Controller's `validate()` hands its rules to `PortfolioRequestValidator` (`checkPortfolio()`, `checkHoldings()`), so the POST row reaches the Validator. `PortfolioResponseBuilder` turns host results into responses (including host status → HTTP status); the Endpoint calls it statically, and the Controller's export does too. GET is matched to the API and Controller methods by its own name, `getPortfolio` (*(same name)* in the Flow table); the POST's `updatePortfolio` has no method of that name there, so the calls it makes are followed instead and reach two methods; the Endpoint's `audit.log(...)` calls are not counted, because `audit` is neither the API nor the Controller.
+How the demo is wired: the Endpoint holds a `CustomerPortfolioApi portfolioApi` field and calls it; `CustomerPortfolioController implements CustomerPortfolioApi` and calls `CustomerPortfolioCommand`, whose methods each send one host request (the made-up service codes are in its `SERVICE_` constants). The Controller's `validate()` hands its rules to `PortfolioRequestValidator` (`checkPortfolio()`, `checkHoldings()`), so the POST row reaches the Validator. (The Endpoint and Controller also call `PortfolioResponseBuilder`; it has no box in the page.) GET is matched to the API and Controller methods by its own name, `getPortfolio` (*(same name)* in the Flow table); the POST's `updatePortfolio` has no method of that name there, so the calls it makes are followed instead and reach two methods; the Endpoint's `audit.log(...)` calls are not counted, because `audit` is neither the API nor the Controller.
 
 Also try:
 - Clear the Controller File: the Controller column says *not pulled*, the API column still fills.

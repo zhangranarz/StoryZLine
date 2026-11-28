@@ -322,7 +322,7 @@ if (!store.json('part.endpoint') && (store.json('endpointParts') || store.get('p
   const old = store.json('endpointParts') || {};
   store.set('part.endpoint', JSON.stringify({ project: store.get('project'), repo: store.get('repo'), path: old.path, files: { endpoint: { fileName: old.fileName, extension: old.extension } } }));
 }
-for (const k of ['endpointParts', 'project', 'repo', 'location', 'branch', 'pickChoice', 'part.api', 'part.controller']) store.remove(k);
+for (const k of ['endpointParts', 'project', 'repo', 'location', 'branch', 'pickChoice', 'part.api', 'part.controller', 'part.builder']) store.remove(k);
 
 // The eComm API path picks the Endpoint method(s) to follow.
 $('api').value = store.get('api');
@@ -337,7 +337,6 @@ const parts = [
   ]),
   new Part('command', 'Command', [{ key: 'command', title: 'File', label: 'Command', placeholder: 'CustomerPortfolioCommand' }]),
   new Part('validator', 'Validator', [{ key: 'validator', title: 'File', label: 'Validator', placeholder: 'PortfolioRequestValidator' }]),
-  new Part('builder', 'Builder', [{ key: 'builder', title: 'File', label: 'Builder', placeholder: 'PortfolioResponseBuilder' }]),
 ];
 // A new box starts with the Endpoint's project and repository.
 const endpointSaved = store.json('part.endpoint') || {};
@@ -442,7 +441,7 @@ $('pick-clear').addEventListener('click', () => {
 
 // ---- Pull the files and follow API path -> Endpoint -> API -> Controller ----
 
-const FILE_ORDER = ['route', 'endpoint', 'api', 'controller', 'command', 'validator', 'builder'];
+const FILE_ORDER = ['route', 'endpoint', 'api', 'controller', 'command', 'validator'];
 let view = null;  // { files, flows, selected, panes, whole }
 
 $('form').addEventListener('submit', async e => {
@@ -496,7 +495,7 @@ function render(results, apiPath) {
   const src = k => (files[k] && files[k].content != null ? files[k].content : null);
   const flows = Java.traceFlows({
     endpoint: src('endpoint'), api: src('api'), controller: src('controller'), command: src('command'),
-    validator: src('validator'), builder: src('builder'), apiPath,
+    validator: src('validator'), apiPath,
   });
   // Each row's route: the <route> whose <from uri="…_name"/> names its Endpoint method.
   let byName = false;
@@ -535,11 +534,10 @@ function render(results, apiPath) {
       <td>${src('controller') != null ? names(r.controller) + by(r, 'controller') : notPulled}</td>
       <td>${src('command') != null ? names(r.command) : notPulled}</td>
       <td>${src('validator') != null ? names(r.validator) : notPulled}</td>
-      <td>${src('builder') != null ? names(r.builder) : notPulled}</td>
     </tr>`).join('') ||
-    `<tr><td colspan="10" class="none">${src('endpoint') == null ? 'The Endpoint file was not pulled.' : apiPath ? 'No Endpoint mapping matches this API.' : 'No mappings found in the Endpoint.'}</td></tr>`;
+    `<tr><td colspan="9" class="none">${src('endpoint') == null ? 'The Endpoint file was not pulled.' : apiPath ? 'No Endpoint mapping matches this API.' : 'No mappings found in the Endpoint.'}</td></tr>`;
 
-  const linked = flows.rows.filter(r => r.api.length || r.controller.length || r.command.length || r.validator.length || r.builder.length).length;
+  const linked = flows.rows.filter(r => r.api.length || r.controller.length || r.command.length || r.validator.length).length;
   $('flow-state').textContent = flows.rows.length ? `${flows.rows.length} row${flows.rows.length === 1 ? '' : 's'}, ${linked} linked past the Endpoint` : '';
   $('flow-state').className = 'state' + (linked ? ' ok' : '');
   const notes = [];
@@ -554,9 +552,6 @@ function render(results, apiPath) {
   }
   if (flows.classes.validator && flows.rows.length && !flows.rows.some(r => r.validator.length)) {
     notes.push(`No calls to ${flows.classes.validator} were found in the Endpoint or Controller methods.`);
-  }
-  if (flows.classes.builder && flows.rows.length && !flows.rows.some(r => r.builder.length)) {
-    notes.push(`No calls to ${flows.classes.builder} were found in the Endpoint or Controller methods.`);
   }
   if (byName) {
     const missing = flows.rows.filter(r => !r.routes.length).map(r => `_${r.endpoint.name}`);
@@ -601,7 +596,7 @@ function drawDiagram() {
   const routeFile = files.route && files.route.loc ? files.route.loc.path.split('/').pop() : '';
   const lanes = {
     route: routeFile, endpoint: flows.classes.endpoint, api: flows.classes.api, controller: flows.classes.controller,
-    command: flows.classes.command, validator: flows.classes.validator, builder: flows.classes.builder,
+    command: flows.classes.command, validator: flows.classes.validator,
   };
   $('diagram').innerHTML = Diagram.toSvg(graph, { lanes, selected: flows.rows.length > 1 ? view.selected : null });
   const row = flows.rows[view.selected];
@@ -670,8 +665,7 @@ function rowParts(key, row) {
   const marks = found.map(m => m.declLine)
     .concat(key === 'endpoint' ? row.callLines : [])
     .concat(key === row.commandFrom ? row.commandCallLines : [])
-    .concat(row.validatorCallLines[key] || [])
-    .concat(row.builderCallLines[key] || []);
+    .concat(row.validatorCallLines[key] || []);
   return { ranges, marks };
 }
 
