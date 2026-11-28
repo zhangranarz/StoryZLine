@@ -3,3 +3,9 @@ node_modules/
 *.log
 __pycache__/
 *.pyc
+
+# Personal lists (may hold internal URLs)
+*.xlsx
+*.xls
+*.csv
+~$*
