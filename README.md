@@ -58,7 +58,7 @@ Instead of typing Bitbucket details, keep them in an Excel sheet. The first shee
 One row per repository. An empty **Bitbucket URL** or **Project key** cell means "same as the row above", so you only need to write them once (merged cells work too). **Download** in Settings gives you a template CSV to start from.
 
 1. In the **⚙ Settings** tab, click **Load** and choose the `.xlsx` (or `.csv`) file. It is read in your browser only, and remembered there until you click **Forget**. The **Bitbucket URL** is filled in from it (a dropdown if the sheet has several; **Other URL…** to type one).
-2. In the **eComm** tab, type the **API** path and fill in the **Route**, **Endpoint**, **APIController**, **Command** and **Builder** boxes. All have URL, Project, Repository and Path; the Route, Endpoint, Command and Builder boxes have one **File** + Extension (`.xml` by default for Route), the APIController box has a row each for **API File** and **Controller File** (with their Extension), in the same folder:
+2. In the **eComm** tab, type the **API** path and fill in the **Endpoint**, **Route**, **APIController**, **Command** and **Builder** boxes. All have URL, Project, Repository and Path; the Endpoint, Route, Command and Builder boxes have one **File** + Extension (`.xml` by default for Route), the APIController box has a row each for **API File** and **Controller File** (with their Extension), in the same folder:
 
    | Part | Input |
    |---|---|

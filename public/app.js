@@ -329,8 +329,8 @@ $('api').value = store.get('api');
 $('api').addEventListener('input', () => store.set('api', $('api').value.trim()));
 
 const parts = [
-  new Part('route', 'Route', [{ key: 'route', title: 'File', label: 'Route', placeholder: 'portfolio-routes', extension: '.xml' }]),
   new Part('endpoint', 'Endpoint', [{ key: 'endpoint', title: 'File', label: 'Endpoint', placeholder: 'CustomerPortfolioEndpoint' }]),
+  new Part('route', 'Route', [{ key: 'route', title: 'File', label: 'Route', placeholder: 'portfolio-routes', extension: '.xml' }]),
   new Part('apictl', 'APIController', [
     { key: 'api', title: 'API File', label: 'API', placeholder: 'CustomerPortfolioApi' },
     { key: 'controller', title: 'Controller File', label: 'Controller', placeholder: 'CustomerPortfolioController' },

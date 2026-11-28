@@ -14,8 +14,8 @@ Fill in the five boxes (Project `DEMO`, Repository `ecomm-services`):
 
 | Box | Path | File(s) |
 |---|---|---|
-| Route | `src/main/resources/routes` | File `portfolio-routes` (Extension `.xml`) |
 | Endpoint | `src/main/java/com/example/ecomm/enq` | File `CustomerPortfolioEndpoint` |
+| Route | `src/main/resources/routes` | File `portfolio-routes` (Extension `.xml`) |
 | APIController | `src/main/java/com/example/ecomm/enq/controller` | API File `CustomerPortfolioApi`, Controller File `CustomerPortfolioController` |
 | Command | `src/main/java/com/example/ecomm/enq/command` | File `CustomerPortfolioCommand` |
 | Builder | `src/main/java/com/example/ecomm/enq/builder` | File `PortfolioResponseBuilder` |
