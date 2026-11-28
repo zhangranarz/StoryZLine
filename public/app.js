@@ -845,7 +845,7 @@ function drawRouteFlow() {
       const tag = how(s.follow);
       // Collapsible: Hide / Expand (remembered per route, by its file and line).
       const key = routeKey(s.follow);
-      html += `<details class="rf-sub${s.follow.ref ? ' rf-ref' : ''}" data-key="${esc(key)}"${hiddenRoutes.has(key) ? '' : ' open'}>` +
+      html += `<details class="rf-sub${s.follow.ref ? ' rf-ref' : ''}" data-key="${esc(key)}"${shownRoutes.has(key) ? ' open' : ''}>` +
         `<summary class="rf-head">↳ route <code>${esc(s.follow.id || s.follow.from)}</code> ${at(s.follow.file, s.follow.line)}` +
         `${tag ? ` <span class="rf-tag">${esc(tag)}</span>` : ''} <span class="rf-toggle" aria-hidden="true"></span>` +
         ` <span class="rf-count">${s.follow.steps.length} step${s.follow.steps.length === 1 ? '' : 's'}</span></summary>` +
@@ -908,9 +908,9 @@ $('route-flow').addEventListener('click', e => {
   else jumpTo('route', Number(a.dataset.line), Number(a.dataset.file));
 });
 
-// Followed routes the user hid (by file and line, as file names can repeat across rows); kept
-// while the page is open, so they stay hidden on other rows and after pulling again.
-const hiddenRoutes = new Set();
+// Followed routes start hidden. The ones the user expanded (by file and line, as file names can
+// repeat across rows) are kept while the page is open, so they stay open on other rows and after pulling again.
+const shownRoutes = new Set();
 const routeKey = r => `${view.routeFiles[r.file] ? (view.routeFiles[r.file].loc || {}).path || r.file : r.file}:${r.line}`;
 // "toggle" doesn't bubble: listen while it goes down.
 $('route-flow').addEventListener('toggle', e => {
@@ -919,7 +919,7 @@ $('route-flow').addEventListener('toggle', e => {
   for (const same of $('route-flow').querySelectorAll(`details.rf-sub[data-key="${CSS.escape(d.dataset.key)}"]`)) {
     if (same.open !== d.open) same.open = d.open;  // the same route followed from elsewhere
   }
-  if (d.open) hiddenRoutes.delete(d.dataset.key); else hiddenRoutes.add(d.dataset.key);
+  if (d.open) shownRoutes.add(d.dataset.key); else shownRoutes.delete(d.dataset.key);
   drawRouteFlowButtons();
 }, true);
 
