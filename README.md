@@ -58,7 +58,7 @@ Instead of typing Bitbucket details, keep them in an Excel sheet. The first shee
 One row per repository. An empty **Bitbucket URL** or **Project key** cell means "same as the row above", so you only need to write them once (merged cells work too). **Download** in Settings gives you a template CSV to start from.
 
 1. In the **⚙ Settings** tab, click **Load** and choose the `.xlsx` (or `.csv`) file. It is read in your browser only, and remembered there until you click **Forget**. The **Bitbucket URL** is filled in from it (a dropdown if the sheet has several; **Other URL…** to type one).
-2. In the **eComm** tab, type the **API** path and fill in the **Endpoint** and **APIController** boxes. Both have URL, Project, Repository and Path; the Endpoint box has one **File** + Extension, the APIController box two: **API File** and **Controller File**, in the same folder:
+2. In the **eComm** tab, type the **API** path and fill in the **Endpoint** and **APIController** boxes. Both have URL, Project, Repository and Path; the Endpoint box has one **File** + Extension, the APIController box has a row each for **API File** and **Controller File** (with their Extension), in the same folder:
 
    | Part | Input |
    |---|---|
@@ -68,7 +68,7 @@ One row per repository. An empty **Bitbucket URL** or **Project key** cell means
    | File / API File / Controller File | the file name, text |
    | Extension | dropdown: `.java` (default), `.xml`, `.properties`, `.yml`, `.yaml`, `.json`, `.sql`, `.wsdl`, `.xsd`, `.kt`, `.groovy`, `.gradle`, `.jsp`, `.txt`, *(no extension)*, or **Other…** to type one; added unless File already ends with it |
 
-3. The last line(s) of each box show the joined Bitbucket file URL, one per file, and update as you change the parts. You can edit it before pulling:
+3. Each file's joined Bitbucket URL updates as you change the parts: under the Endpoint box's line, and at the end of each file's row (API File, Controller File) in the APIController box. You can edit it before pulling:
    `URL /projects/ Project /repos/ Repository /browse/ Path / File Extension`
 
    No branch is added, so Bitbucket uses the repository's default branch. To pull another branch, add `?at=<branch>` to the end yourself. A file with no name is skipped.

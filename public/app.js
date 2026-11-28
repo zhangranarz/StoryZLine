@@ -143,10 +143,13 @@ class Part {
     this.key = key;
     this.el = $('part-template').content.firstElementChild.cloneNode(true);
     this.el.querySelector('legend').textContent = legend;
-    // Columns: URL, Project, Repository, Path, then File + Extension for each file; the minimums
-    // keep short values such as a project key readable when two files share the line.
+    // One file: URL, Project, Repository, Path, File, Extension on one line, the joined URL below.
+    // Several files: URL, Project, Repository, Path on the first line, then a row per file with
+    // its File, Extension and joined URL.
+    const multi = files.length > 1;
     this.el.querySelector('.parts').style.setProperty('--cols',
-      'minmax(6rem, 1.4fr) minmax(6rem, .7fr) minmax(8.5rem, 1fr) minmax(8rem, 2fr)' + ' minmax(7rem, 1.3fr) minmax(5.5rem, .7fr)'.repeat(files.length));
+      'minmax(6rem, 1.4fr) minmax(6rem, .7fr) minmax(8.5rem, 1fr) minmax(8rem, 2fr)' + (multi ? '' : ' minmax(7rem, 1.3fr) minmax(5.5rem, .7fr)'));
+    if (multi) this.el.append(this.$('msg'));
     this.files = files.map(f => {
       const pair = $('file-template').content.cloneNode(true);
       const file = { ...f, name: pair.querySelector('.p-file'), extSelect: pair.querySelector('.p-ext-select'), ext: pair.querySelector('.p-ext') };
@@ -154,14 +157,24 @@ class Part {
       file.name.placeholder = f.placeholder;
       file.extSelect.innerHTML = EXTENSIONS.map(x => `<option value="${x}">${x}</option>`).join('') +
         `<option value="">(no extension)</option><option value="${OTHER}">Other…</option>`;
-      this.el.querySelector('.parts').append(pair);
       file.url = document.createElement('input');
       file.url.className = 'p-url endpoint-url';
       file.url.autocomplete = 'off';
-      file.url.title = `${f.label} file URL, joined from the parts above; you can edit it`;
-      file.url.placeholder = `${f.label}: Bitbucket file URL, or a path such as src/main/java/…/${f.placeholder}.java`;
-      file.url.setAttribute('aria-label', `${f.label} file URL`);
-      this.$('urls').append(file.url);
+      file.url.title = `${f.label} file URL, joined from the parts; you can edit it`;
+      file.url.placeholder = `Bitbucket file URL, or a path such as src/main/java/…/${f.placeholder}.java`;
+      if (multi) {
+        const row = document.createElement('div');
+        row.className = 'file-row';
+        const urlLabel = document.createElement('label');
+        urlLabel.innerHTML = `<span>${esc(f.label)} URL</span>`;
+        urlLabel.append(file.url);
+        row.append(pair, urlLabel);
+        this.$('urls').append(row);
+      } else {
+        file.url.setAttribute('aria-label', `${f.label} file URL`);
+        this.el.querySelector('.parts').append(pair);
+        this.$('urls').append(file.url);
+      }
 
       file.extSelect.addEventListener('change', e => {
         if (e.target.value === OTHER) {
