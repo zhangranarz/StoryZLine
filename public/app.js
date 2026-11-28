@@ -201,11 +201,42 @@ $('download').addEventListener('click', () => {
 
 // ---- Pick from Excel ----------------------------------------------------------------
 // The list (no passwords) and the last picks are remembered in this browser.
+// The Bitbucket URL is the login's; the pick lists follow it.
 
 const XL = window.StoryZExcel;
-const PICK_KEYS = ['baseUrl', 'project', 'repo', 'branch', 'location'];
+const PICK_KEYS = ['project', 'repo', 'branch', 'location'];
+const OTHER_URL = '__other__';
 let pickEntries = [];
 let pickColumns = [];
+
+const sameUrl = (a, b) => String(a || '').trim().replace(/\/+$/, '').toLowerCase() ===
+  String(b || '').trim().replace(/\/+$/, '').toLowerCase();
+
+function setLoginUrl(url) {
+  if (sameUrl(url, $('conn-url').value)) return;
+  $('conn-url').value = url;
+  store.set('baseUrl', url);
+  loggedIn = false;
+  updateState();
+}
+
+// Shows the Excel's Bitbucket URLs as a dropdown in the login, with "Other URL…" for typing one.
+// fromNewFile: a freshly loaded list replaces a URL that isn't in it.
+function showUrlChoices(fromNewFile) {
+  const urls = [...new Set(pickEntries.map(e => e.baseUrl))];
+  const sel = $('conn-url-select');
+  sel.innerHTML = urls.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('') +
+    `<option value="${OTHER_URL}">Other URL…</option>`;
+  let match = urls.find(u => sameUrl(u, $('conn-url').value));
+  if (!match && (fromNewFile || !$('conn-url').value.trim())) {
+    match = urls[0];
+    setLoginUrl(match);
+  }
+  sel.value = match || OTHER_URL;
+  sel.hidden = false;
+  $('conn-url').hidden = Boolean(match);
+  $('conn-url-hint').textContent = urls.length > 1 ? `(${urls.length} in the Excel list)` : '(from the Excel list)';
+}
 
 function setPickStatus(text, isError = false) {
   $('pick-status').textContent = text;
@@ -213,16 +244,17 @@ function setPickStatus(text, isError = false) {
 }
 
 function pickParts() {
-  const p = { path: $('pick-path').value, fileName: $('pick-name').value };
+  const p = { baseUrl: $('conn-url').value.trim(), path: $('pick-path').value, fileName: $('pick-name').value };
   for (const k of PICK_KEYS) p[k] = $('pick-' + k).value;
   return p;
 }
 
-function loadPickList(list) {
+function loadPickList(list, fromNewFile = false) {
   pickEntries = list.entries;
   pickColumns = list.columns;
-  $('pick-body').hidden = false;
+  $('pick').hidden = false;
   $('pick-clear').hidden = false;
+  showUrlChoices(fromNewFile);
   $('pick-state').textContent = `${list.entries.length} row${list.entries.length === 1 ? '' : 's'} from ${list.source}`;
   $('pick-state').className = 'state ok';
   const saved = store.json('pickChoice') || {};
@@ -232,9 +264,16 @@ function loadPickList(list) {
   refreshPicks();
 }
 
-// Each pick list only offers values that fit the picks to its left.
+// Each pick list only offers values that fit the Bitbucket URL and the picks to its left.
 function refreshPicks() {
-  let rows = pickEntries;
+  if (!pickEntries.length) return;
+  let rows = pickEntries.filter(e => sameUrl(e.baseUrl, $('conn-url').value));
+  $('pick-body').hidden = !rows.length;
+  $('pick-empty').hidden = Boolean(rows.length);
+  if (!rows.length) {
+    $('pick-empty').textContent = 'The Excel list has no rows for this Bitbucket URL. Choose one of its URLs in the login above.';
+    return;
+  }
   for (const k of PICK_KEYS) {
     const sel = $('pick-' + k);
     const current = sel.value || sel.dataset.want || '';
@@ -283,12 +322,25 @@ $('pick-file').addEventListener('change', async e => {
     const rows = await XL.readTable(file.name, await file.arrayBuffer());
     const list = { ...XL.toEntries(rows), source: file.name };
     store.set('pickList', JSON.stringify(list));
-    loadPickList(list);
+    loadPickList(list, true);
     setPickStatus('');
   } catch (err) {
     setPickStatus(err.message, true);
   }
 });
+
+$('conn-url-select').addEventListener('change', e => {
+  if (e.target.value === OTHER_URL) {
+    $('conn-url').hidden = false;
+    $('conn-url').value = '';
+    $('conn-url').focus();
+  } else {
+    $('conn-url').hidden = true;
+    setLoginUrl(e.target.value);
+  }
+  refreshPicks();
+});
+$('conn-url').addEventListener('input', refreshPicks);
 
 for (const k of PICK_KEYS) $('pick-' + k).addEventListener('change', refreshPicks);
 for (const id of ['pick-path', 'pick-name']) {
@@ -299,14 +351,6 @@ for (const id of ['pick-path', 'pick-name']) {
 $('pick-use').addEventListener('click', () => {
   const url = updatePickUrl();
   if (!url) return;
-  const p = pickParts();
-  // The login must be for the same Bitbucket server as the picked file.
-  if ($('conn-url').value.trim().replace(/\/+$/, '') !== p.baseUrl.trim().replace(/\/+$/, '')) {
-    $('conn-url').value = p.baseUrl.trim();
-    store.set('baseUrl', $('conn-url').value);
-    loggedIn = false;
-    updateState();
-  }
   $('location').value = url;
   store.set('location', url);
   const needLogin = !$('conn-user').value.trim() || !$('conn-pass').value;
@@ -330,9 +374,12 @@ $('pick-clear').addEventListener('click', () => {
   store.remove('pickList');
   store.remove('pickChoice');
   pickEntries = [];
-  $('pick-body').hidden = true;
+  $('pick').hidden = true;
   $('pick-clear').hidden = true;
   $('pick-state').textContent = '';
+  $('conn-url-select').hidden = true;
+  $('conn-url').hidden = false;
+  $('conn-url-hint').textContent = '';
   setPickStatus('List forgotten. Load another Excel file any time.');
 });
 

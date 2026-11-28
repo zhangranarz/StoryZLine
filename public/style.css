@@ -34,7 +34,10 @@ select:disabled { opacity: .6; }
 .file-button input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .file-button span { display: inline-block; font-weight: 600; margin: 0; padding: 8px 14px; border-radius: 7px; border: 1px solid var(--accent); color: var(--accent); cursor: pointer; }
 .file-button input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
-#pick-body { margin-top: 14px; }
+.excel-bar { margin: -4px 0 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.excel-bar .note { margin-top: 8px; }
+#pick-empty { color: var(--err); }
+#conn-url-select:not([hidden]) + #conn-url:not([hidden]) { margin-top: 8px; }
 .url-preview { display: block; padding: 9px 11px; border: 1px dashed var(--border); border-radius: 7px; font: 13px/1.5 ui-monospace, Consolas, "Cascadia Mono", monospace; word-break: break-all; min-height: 2.6em; }
 .url-preview.error { color: var(--err); font-family: inherit; }
 small { font-weight: 400; }

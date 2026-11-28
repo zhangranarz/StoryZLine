@@ -15,9 +15,23 @@
   <main>
     <form id="conn" class="card">
       <div class="card-title">Bitbucket login <span id="conn-state" class="state"></span></div>
+      <div class="excel-bar">
+        <div class="actions">
+          <label class="file-button">
+            <input id="pick-file" type="file" accept=".xlsx,.csv,.txt">
+            <span>Load Excel list…</span>
+          </label>
+          <button id="pick-template" type="button">Download template</button>
+          <button id="pick-clear" type="button" hidden>Forget list</button>
+          <span id="pick-state" class="state"></span>
+          <span id="pick-status" role="status"></span>
+        </div>
+        <p class="note">Excel columns: <b>Bitbucket URL</b>, <b>Project key</b>, <b>Repository</b>, <b>Branch</b>, <b>Endpoint Java file location</b> (first sheet, .xlsx or .csv). The Bitbucket URL below is filled in from the list. The file is read in this browser only.</p>
+      </div>
       <div class="grid">
         <label class="wide">
-          <span>Bitbucket URL</span>
+          <span>Bitbucket URL <small id="conn-url-hint" class="muted"></small></span>
+          <select id="conn-url-select" hidden></select>
           <input id="conn-url" required placeholder="https://bitbucket.yourcompany.com" autocomplete="url">
         </label>
         <label>
@@ -44,22 +58,11 @@
       <p class="note">Your password goes only to this local server and on to Bitbucket. It is never saved; reloading the page clears it. The URL, user ID and defaults are remembered in this browser.</p>
     </form>
 
-    <section id="pick" class="card">
-      <div class="card-title">Pick from Excel <span id="pick-state" class="state"></span></div>
-      <div class="actions">
-        <label class="file-button">
-          <input id="pick-file" type="file" accept=".xlsx,.csv,.txt">
-          <span>Load Excel list…</span>
-        </label>
-        <button id="pick-template" type="button">Download template</button>
-        <button id="pick-clear" type="button" hidden>Forget list</button>
-        <span id="pick-status" role="status"></span>
-      </div>
-      <p class="note">Columns: <b>Bitbucket URL</b>, <b>Project key</b>, <b>Repository</b>, <b>Branch</b>, <b>Endpoint Java file location</b> (first sheet, .xlsx or .csv). The file is read in this browser only.</p>
-
-      <div id="pick-body" hidden>
+    <section id="pick" class="card" hidden>
+      <div class="card-title">Pick from Excel <small class="muted">for the Bitbucket URL above</small></div>
+      <p id="pick-empty" class="note" hidden></p>
+      <div id="pick-body">
         <div class="grid">
-          <label class="wide"><span>Bitbucket URL</span><select id="pick-baseUrl" data-key="baseUrl"></select></label>
           <label><span>Project key</span><select id="pick-project" data-key="project"></select></label>
           <label><span>Repository</span><select id="pick-repo" data-key="repo"></select></label>
           <label><span>Branch</span><select id="pick-branch" data-key="branch"></select></label>
