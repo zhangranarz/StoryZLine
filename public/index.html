@@ -30,14 +30,62 @@
           <span>eCommAPI</span>
           <input id="api" name="api" placeholder="/spl-banking/enq/customer/portfolio" autocomplete="off">
         </label>
-        <div id="build" class="grid" hidden>
-          <label class="wide"><span>Endpoint Java file location <small class="muted">(from the Excel list)</small></span><select id="pick-location"></select></label>
-          <label><span>Path <small class="muted">(added after the location)</small></span><input id="pick-path" placeholder="enq/customer" autocomplete="off"></label>
-          <label><span>File name</span><input id="pick-name" placeholder="PortfolioEndpoint.java" autocomplete="off"></label>
-          <p id="build-msg" class="note wide" hidden></p>
-        </div>
+        <fieldset class="endpoint">
+          <legend>Endpoint parts</legend>
+          <div class="grid three">
+            <label class="wide">
+              <span>Bitbucket URL <small class="muted">(from <button type="button" class="link" data-tab="settings">Settings</button>)</small></span>
+              <input id="ep-base" readonly tabindex="-1" placeholder="Set the Bitbucket URL in Settings">
+            </label>
+            <label>
+              <span>Project key</span>
+              <select id="pick-project" data-other-for="conn-project" hidden></select>
+              <input id="conn-project" placeholder="ECOM" autocomplete="off">
+            </label>
+            <label>
+              <span>Repository</span>
+              <select id="pick-repo" data-other-for="conn-repo" hidden></select>
+              <input id="conn-repo" placeholder="ecomm-api" autocomplete="off">
+            </label>
+            <label>
+              <span>Branch <small class="muted">(optional)</small></span>
+              <select id="pick-branch" data-other-for="conn-branch" hidden></select>
+              <input id="conn-branch" placeholder="default branch" autocomplete="off">
+            </label>
+            <label class="wide">
+              <span>Path</span>
+              <input id="pick-path" list="path-list" placeholder="src/main/java/com/yourcompany/ecomm/enq" autocomplete="off">
+              <datalist id="path-list"></datalist>
+            </label>
+            <label class="span2">
+              <span>File name</span>
+              <input id="pick-name" placeholder="PortfolioEndpoint" autocomplete="off">
+            </label>
+            <label>
+              <span>File extension</span>
+              <input id="pick-ext" list="ext-list" value=".java" autocomplete="off">
+              <datalist id="ext-list">
+                <option value=".java"></option>
+                <option value=".xml"></option>
+                <option value=".properties"></option>
+                <option value=".yml"></option>
+                <option value=".yaml"></option>
+                <option value=".json"></option>
+                <option value=".sql"></option>
+                <option value=".wsdl"></option>
+                <option value=".xsd"></option>
+                <option value=".kt"></option>
+                <option value=".groovy"></option>
+                <option value=".gradle"></option>
+                <option value=".jsp"></option>
+                <option value=".txt"></option>
+              </datalist>
+            </label>
+          </div>
+          <p id="build-msg" class="note" hidden></p>
+        </fieldset>
         <label>
-          <span id="location-label">EndPoint Java file location</span>
+          <span>Endpoint <small class="muted">(full Bitbucket file URL, joined from the parts above; you can edit it)</small></span>
           <input id="location" name="location" required autocomplete="off"
                  placeholder="Bitbucket file URL, or a path such as src/main/java/com/bank/PortfolioEndpoint.java">
         </label>
@@ -84,7 +132,7 @@
             <span id="pick-state" class="state"></span>
             <span id="pick-status" role="status"></span>
           </div>
-          <p class="note">Excel columns: <b>Bitbucket URL</b>, <b>Project key</b>, <b>Repository</b>, <b>Branch</b>, <b>Endpoint Java file location</b> (first sheet, .xlsx or .csv). The Bitbucket URL below is filled in from the list. The file is read in this browser only.</p>
+          <p class="note">Excel columns: <b>Bitbucket URL</b>, <b>Project key</b>, <b>Repository</b>, <b>Branch</b>, <b>Endpoint Java file location</b> (first sheet, .xlsx or .csv). The Bitbucket URL below is filled in from the list; project keys, repositories, branches and paths are offered in the eComm API tab. The file is read in this browser only.</p>
         </div>
         <div class="grid">
           <label class="wide">
@@ -101,20 +149,6 @@
             <input id="conn-pass" type="password" required autocomplete="current-password" placeholder="Password or HTTP access token">
           </label>
         </div>
-        <div id="excel-picks" class="grid three" hidden>
-          <label><span>Project key</span><select id="pick-project"></select></label>
-          <label><span>Repository</span><select id="pick-repo"></select></label>
-          <label><span>Branch</span><select id="pick-branch"></select></label>
-        </div>
-        <p id="pick-empty" class="note" hidden></p>
-        <details id="defaults">
-          <summary>Default project / repo / branch (optional, lets you type plain file paths)</summary>
-          <div class="grid three">
-            <label><span>Project key</span><input id="conn-project" placeholder="ECOM" autocomplete="off"></label>
-            <label><span>Repository</span><input id="conn-repo" placeholder="ecomm-api" autocomplete="off"></label>
-            <label><span>Branch</span><input id="conn-branch" placeholder="develop" autocomplete="off"></label>
-          </div>
-        </details>
         <div class="actions">
           <button id="login" type="submit">Log in</button>
           <span id="conn-status" role="status"></span>

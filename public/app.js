@@ -51,8 +51,8 @@ showTab($('conn-url').value && $('conn-user').value ? 'api' : 'settings');
 // Fill any empty fields from .env defaults, if the server has them.
 fetch('/api/config').then(r => r.json()).then(c => {
   for (const [k, id] of Object.entries(CONN_FIELDS)) if (!$(id).value && c[k]) $(id).value = c[k];
-  if ($('conn-project').value || $('conn-repo').value) $('defaults').open = true;
   updateState();
+  refreshPicks();
 }).catch(() => setConnStatus('Server not reachable. Is StoryZLine running?', true));
 
 let loggedIn = false;
@@ -248,15 +248,16 @@ $('download').addEventListener('click', () => {
   URL.revokeObjectURL(a.href);
 });
 
-// ---- Excel list ---------------------------------------------------------------------
-// The list (no passwords) and the last picks are remembered in this browser.
-// It fills the login (Bitbucket URL, project, repository, branch) and builds the file
-// location from the endpoint location, path and file name.
+// ---- Endpoint parts and the Excel list ------------------------------------------------
+// The Endpoint is joined from: Bitbucket URL (Settings) / Project key / Repository / Branch /
+// Path / File name / File extension. With an Excel list loaded, project, repository and branch
+// become dropdowns (plus "Other…" to type a value), and its "Endpoint Java file location"
+// values are offered for Path. The list (no passwords) and the parts are remembered in this browser.
 
 const XL = window.StoryZExcel;
-const PICK_KEYS = ['project', 'repo', 'branch', 'location'];
-const LOGIN_FIELDS = { project: 'conn-project', repo: 'conn-repo', branch: 'conn-branch' };
-const OTHER_URL = '__other__';
+const LEVELS = ['project', 'repo', 'branch'];                // narrowed in this order
+const INPUT = { project: 'conn-project', repo: 'conn-repo', branch: 'conn-branch' };
+const OTHER = '__other__';
 let pickEntries = [];
 let pickColumns = [];
 
@@ -276,28 +277,104 @@ function setLoginUrl(url) {
   updateState();
 }
 
-// Shows the Excel's Bitbucket URLs as a dropdown in the login, with "Other URL…" for typing one.
+// Shows the Excel's Bitbucket URLs as a dropdown in Settings, with "Other URL…" for typing one.
 // fromNewFile: a freshly loaded list replaces a URL that isn't in it.
 function showUrlChoices(fromNewFile) {
   const urls = [...new Set(pickEntries.map(e => e.baseUrl))];
   const sel = $('conn-url-select');
   sel.innerHTML = urls.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('') +
-    `<option value="${OTHER_URL}">Other URL…</option>`;
+    `<option value="${OTHER}">Other URL…</option>`;
   let match = urls.find(u => sameUrl(u, $('conn-url').value));
   if (!match && (fromNewFile || !$('conn-url').value.trim())) {
     match = urls[0];
     setLoginUrl(match);
   }
-  sel.value = match || OTHER_URL;
+  sel.value = match || OTHER;
   sel.hidden = false;
   $('conn-url').hidden = Boolean(match);
   $('conn-url-hint').textContent = urls.length > 1 ? `(${urls.length} in the Excel list)` : '(from the Excel list)';
 }
 
-function pickParts() {
-  const p = { baseUrl: $('conn-url').value.trim(), path: $('pick-path').value, fileName: $('pick-name').value };
-  for (const k of PICK_KEYS) p[k] = $('pick-' + k).value;
-  return p;
+// Clears the levels after `key`, so they fall back to the first value that fits.
+function resetAfter(key) {
+  for (const k of LEVELS.slice(LEVELS.indexOf(key) + 1)) {
+    $(INPUT[k]).value = '';
+    delete $('pick-' + k).dataset.other;
+  }
+  $('pick-path').dataset.auto = '1';
+}
+
+// Fills the dropdowns and path suggestions from the Excel rows that fit the Bitbucket URL and
+// the levels before each one, then rebuilds the Endpoint.
+function refreshPicks() {
+  $('ep-base').value = $('conn-url').value.trim();
+  let rows = pickEntries.filter(e => sameUrl(e.baseUrl, $('conn-url').value));
+  for (const k of LEVELS) {
+    const sel = $('pick-' + k);
+    const input = $(INPUT[k]);
+    const values = [...new Set(rows.map(e => e[k]).filter(Boolean))];
+    const v = input.value.trim();
+    if (values.length) {
+      sel.innerHTML = values.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join('') +
+        `<option value="${OTHER}">Other…</option>`;
+      if (values.includes(v)) {
+        sel.value = v;
+        delete sel.dataset.other;
+      } else if (v || sel.dataset.other) {
+        sel.value = OTHER;
+      } else {
+        input.value = values[0];
+        sel.value = values[0];
+      }
+      sel.hidden = false;
+      input.hidden = sel.value !== OTHER;
+      rows = rows.filter(e => e[k] === input.value.trim());
+    } else {
+      sel.hidden = true;
+      input.hidden = false;
+    }
+    store.set(k, input.value.trim());
+  }
+
+  // Offer the sheet's endpoint locations for Path, and use the first while Path is untouched.
+  const paths = [...new Set(rows.map(e => e.location).filter(Boolean))];
+  $('path-list').innerHTML = paths.map(p => `<option value="${esc(p)}"></option>`).join('');
+  if (paths.length && $('pick-path').dataset.auto && !paths.includes($('pick-path').value)) {
+    $('pick-path').value = paths[0];
+  }
+  if (!$('pick-path').value) $('pick-path').dataset.auto = '1';
+
+  updateState();
+  updateEndpoint();
+}
+
+function endpointParts() {
+  return {
+    baseUrl: $('conn-url').value.trim(),
+    project: $('conn-project').value,
+    repo: $('conn-repo').value,
+    branch: $('conn-branch').value,
+    path: $('pick-path').value,
+    fileName: $('pick-name').value,
+    extension: $('pick-ext').value,
+  };
+}
+
+// Rebuilds the Endpoint from its parts. It stays as it is (and can be edited) until a part changes.
+function updateEndpoint() {
+  const parts = endpointParts();
+  store.set('endpointParts', JSON.stringify({ path: parts.path, fileName: parts.fileName, extension: parts.extension }));
+  const msg = $('build-msg');
+  const anyPart = parts.path.trim() || parts.fileName.trim();
+  try {
+    const url = Loc.buildFileUrl(parts);
+    $('location').value = url;
+    store.set('location', url);
+    msg.hidden = true;
+  } catch (err) {
+    msg.textContent = err.message;
+    msg.hidden = !anyPart;  // no nagging before anything has been typed
+  }
 }
 
 function loadPickList(list, fromNewFile = false) {
@@ -307,69 +384,11 @@ function loadPickList(list, fromNewFile = false) {
   $('pick-state').textContent = `${list.entries.length} row${list.entries.length === 1 ? '' : 's'} from ${list.source}`;
   $('pick-state').className = 'state ok';
   showUrlChoices(fromNewFile);
-  const saved = store.json('pickChoice') || {};
-  for (const k of PICK_KEYS) $('pick-' + k).dataset.want = saved[k] || '';
-  $('pick-path').value = saved.path || '';
-  $('pick-name').value = saved.fileName || '';
+  if (fromNewFile) {
+    for (const k of LEVELS) $(INPUT[k]).value = '';
+    $('pick-path').dataset.auto = '1';
+  }
   refreshPicks();
-}
-
-// Shows the Excel pick lists, or the plain login/location fields when there is no list
-// (or no rows for the Bitbucket URL in use).
-function showExcelFields(on) {
-  $('excel-picks').hidden = !on;
-  $('build').hidden = !on;
-  $('defaults').hidden = on;
-  $('location-label').textContent = on
-    ? 'Full Bitbucket file URL (built from the picks above; you can still edit it)'
-    : 'EndPoint Java file location';
-}
-
-// Each pick list only offers values that fit the Bitbucket URL and the picks before it.
-function refreshPicks() {
-  if (!pickEntries.length) return;
-  let rows = pickEntries.filter(e => sameUrl(e.baseUrl, $('conn-url').value));
-  showExcelFields(rows.length > 0);
-  $('pick-empty').hidden = rows.length > 0;
-  if (!rows.length) {
-    $('pick-empty').textContent = 'The Excel list has no rows for this Bitbucket URL, so type the project, repository and file location yourself.';
-    return;
-  }
-  for (const k of PICK_KEYS) {
-    const sel = $('pick-' + k);
-    const current = sel.value || sel.dataset.want || '';
-    delete sel.dataset.want;
-    const values = [...new Set(rows.map(e => e[k]))];
-    sel.innerHTML = values.map(v => `<option value="${esc(v)}">${esc(v || (pickColumns.includes(k) ? '(empty)' : '(not in sheet)'))}</option>`).join('');
-    sel.value = values.includes(current) ? current : values[0];
-    sel.disabled = !pickColumns.includes(k);
-    rows = rows.filter(e => e[k] === sel.value);
-    // Keep the login's project / repository / branch in step, so plain paths use them too.
-    if (LOGIN_FIELDS[k]) {
-      $(LOGIN_FIELDS[k]).value = sel.value;
-      store.set(k, sel.value);
-    }
-  }
-  updateState();
-  updatePickUrl();
-}
-
-// Rebuilds the file location from the picks; leaves it alone until a file name is given.
-function updatePickUrl() {
-  const parts = pickParts();
-  store.set('pickChoice', JSON.stringify(parts));
-  const msg = $('build-msg');
-  try {
-    const url = Loc.buildFileUrl(parts);
-    $('location').value = url;
-    store.set('location', url);
-    msg.hidden = true;
-    return url;
-  } catch (err) {
-    msg.textContent = err.message;
-    msg.hidden = false;
-    return null;
-  }
 }
 
 function saveFile(name, text, type) {
@@ -400,7 +419,7 @@ $('pick-file').addEventListener('change', async e => {
 });
 
 $('conn-url-select').addEventListener('change', e => {
-  if (e.target.value === OTHER_URL) {
+  if (e.target.value === OTHER) {
     $('conn-url').hidden = false;
     $('conn-url').value = '';
     $('conn-url').focus();
@@ -408,28 +427,57 @@ $('conn-url-select').addEventListener('change', e => {
     $('conn-url').hidden = true;
     setLoginUrl(e.target.value);
   }
+  resetAfter('url');
+  $(INPUT.project).value = '';
+  delete $('pick-project').dataset.other;
   refreshPicks();
 });
 $('conn-url').addEventListener('input', refreshPicks);
 
-for (const k of PICK_KEYS) $('pick-' + k).addEventListener('change', refreshPicks);
-for (const id of ['pick-path', 'pick-name']) $(id).addEventListener('input', updatePickUrl);
+for (const k of LEVELS) {
+  $('pick-' + k).addEventListener('change', e => {
+    const input = $(INPUT[k]);
+    if (e.target.value === OTHER) {
+      e.target.dataset.other = '1';
+      input.value = '';
+      input.hidden = false;
+      input.focus();
+    } else {
+      delete e.target.dataset.other;
+      input.value = e.target.value;
+    }
+    resetAfter(k);
+    refreshPicks();
+  });
+  $(INPUT[k]).addEventListener('input', refreshPicks);
+}
+
+$('pick-path').addEventListener('input', () => {
+  delete $('pick-path').dataset.auto;   // typed by hand: don't replace it from the sheet
+  updateEndpoint();
+});
+for (const id of ['pick-name', 'pick-ext']) $(id).addEventListener('input', updateEndpoint);
 
 $('pick-template').addEventListener('click', () => saveFile('storyzline-list.csv', XL.TEMPLATE_CSV, 'text/csv'));
 
 $('pick-clear').addEventListener('click', () => {
   store.remove('pickList');
-  store.remove('pickChoice');
   pickEntries = [];
-  showExcelFields(false);
-  $('pick-empty').hidden = true;
   $('pick-clear').hidden = true;
   $('pick-state').textContent = '';
   $('conn-url-select').hidden = true;
   $('conn-url').hidden = false;
   $('conn-url-hint').textContent = '';
+  refreshPicks();
   setPickStatus('List forgotten. Load another Excel file any time.');
 });
 
+const savedParts = store.json('endpointParts') || {};
+$('pick-path').value = savedParts.path || '';
+$('pick-name').value = savedParts.fileName || '';
+if (typeof savedParts.extension === 'string') $('pick-ext').value = savedParts.extension;
+if (!$('pick-path').value) $('pick-path').dataset.auto = '1';
+
 const savedList = store.json('pickList');
 if (savedList && Array.isArray(savedList.entries) && savedList.entries.length) loadPickList(savedList);
+else refreshPicks();

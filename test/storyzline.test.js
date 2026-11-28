@@ -287,6 +287,14 @@ test('buildFileUrl joins Bitbucket URL, project, repo, location, path and file n
   assert.match(release, /\?at=release\/1\.2$/);
   assert.strictEqual(resolveLocation(release, { baseUrl: parts.baseUrl }).ref, 'release/1.2');
   assert.throws(() => buildFileUrl({ ...parts, fileName: '' }), /File name/);
+
+  // A separate extension part: added once, with or without its dot; "" adds none.
+  const noLoc = { ...parts, location: '', path: 'src/main/resources', branch: '' };
+  assert.match(buildFileUrl({ ...noLoc, fileName: 'application', extension: '.yml' }), /\/src\/main\/resources\/application\.yml$/);
+  assert.match(buildFileUrl({ ...noLoc, fileName: 'application', extension: 'properties' }), /\/application\.properties$/);
+  assert.match(buildFileUrl({ ...noLoc, fileName: 'Portfolio.java', extension: '.java' }), /\/Portfolio\.java$/);
+  assert.match(buildFileUrl({ ...noLoc, fileName: 'Dockerfile', extension: '' }), /\/Dockerfile$/);
+  assert.throws(() => buildFileUrl({ ...noLoc, fileName: 'a', extension: '.ja va' }), /extension/);
   assert.throws(() => buildFileUrl({ ...parts, path: '../secret' }), /\.\./);
 });
 

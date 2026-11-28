@@ -88,9 +88,10 @@
     return { project, repo, ref, path, rawUrl, browseUrl };
   }
 
-  // Joins pick-list parts into the Bitbucket "browse" URL of a file:
-  // Bitbucket URL + project + repository + endpoint location + extra path + file name (+ branch).
-  // A file name without an extension gets ".java".
+  // Joins parts into the Bitbucket "browse" URL of a file:
+  // Bitbucket URL + project + repository + location + path + file name + extension (+ branch).
+  // extension: added unless the file name already ends with it; "" adds none. Without an
+  // extension part, a file name that has no extension gets ".java".
   function buildFileUrl(parts) {
     const cfg = { baseUrl: String(parts.baseUrl || '').trim() };
     checkBaseUrl(cfg);
@@ -100,7 +101,15 @@
     if (!project || !repo) throw new LocationError('Pick a project key and repository.');
     let name = String(parts.fileName || '').trim().replace(/^[\\/]+/, '');
     if (!name) throw new LocationError('Enter the File name.');
-    if (!/\.[A-Za-z0-9]+$/.test(name)) name += '.java';
+    if (parts.extension === undefined) {
+      if (!/\.[A-Za-z0-9]+$/.test(name)) name += '.java';
+    } else {
+      const ext = String(parts.extension).trim().replace(/^\.?/, '.');
+      if (ext !== '.') {
+        if (!/^\.[A-Za-z0-9_-]+$/.test(ext)) throw new LocationError('The file extension may only contain letters, digits, "-" and "_", e.g. .java');
+        if (!name.toLowerCase().endsWith(ext.toLowerCase())) name += ext;
+      }
+    }
     const segments = [parts.location, parts.path, name]
       .flatMap(s => String(s || '').replace(/\\/g, '/').split('/'))
       .map(s => s.trim())
