@@ -1,6 +1,6 @@
 # Demo kit
 
-Try StoryZLine without a real Bitbucket: a pretend Bitbucket serves the sample Endpoint and Controller files in this folder.
+Try StoryZLine without a real Bitbucket: a pretend Bitbucket serves the sample Endpoint, API and Controller files in this folder.
 
 ## Start
 
@@ -10,25 +10,26 @@ Try StoryZLine without a real Bitbucket: a pretend Bitbucket serves the sample E
 
 ## Try it in the eComm tab
 
-Fill in the two boxes (Project `DEMO`, Repository `ecomm-services`, Extension `.java`):
+Fill in the two boxes (Project `DEMO`, Repository `ecomm-services`, Extensions `.java`):
 
-| Box | Path | File |
+| Box | Path | File(s) |
 |---|---|---|
-| Endpoint | `src/main/java/com/example/ecomm/enq` | `CustomerPortfolioEndpoint` |
-| Controller | `src/main/java/com/example/ecomm/enq/controller` | `CustomerPortfolioController` |
+| Endpoint | `src/main/java/com/example/ecomm/enq` | File `CustomerPortfolioEndpoint` |
+| APIController | `src/main/java/com/example/ecomm/enq/controller` | API File `CustomerPortfolioApi`, Controller File `CustomerPortfolioController` |
 
 Then type an **API** and click **Pull from Bitbucket**:
 
-| API | Flow rows: Endpoint → Controller |
+| API | Flow rows: Endpoint → API → Controller |
 |---|---|
-| `/spl-banking/enq/customer/portfolio/12345` | `getPortfolio()` → `getPortfolio()`, and `updatePortfolio()` (POST) → `validate()`, `savePortfolio()` |
-| `/enq/customer/overview` | `summary()` → `summary()`, exact match |
-| `/spl-banking/enq/customer/portfolio/12345/holdings/H-9` | `removeHolding()` (DELETE) → `removeHolding()` |
+| `/spl-banking/enq/customer/portfolio/12345` | `getPortfolio()` → `getPortfolio()` → `getPortfolio()`, and `updatePortfolio()` (POST) → `validate()`, `savePortfolio()` → `validate()`, `savePortfolio()` |
+| `/enq/customer/overview` | `summary()` → `summary()` → `summary()`, exact match |
+| `/enq/customer/portfolio/12345/export` | `exportPortfolio()` → `exportCsv()` → `exportCsv()` (the names differ along the way) |
 | `/enq/customer/unknown` | none: the whole Endpoint file is shown |
 | *(empty)* | every mapping in the Endpoint |
 
-Things to notice: the POST row reaches two Controller methods; the Endpoint's `audit.log(...)` calls are not counted, because `audit` isn't the Controller.
+How the demo is wired: the Endpoint holds a `CustomerPortfolioApi portfolioApi` field and calls it; `CustomerPortfolioController implements CustomerPortfolioApi`. The POST row reaches two methods; the Endpoint's `audit.log(...)` calls are not counted, because `audit` is neither the API nor the Controller.
 
 Also try:
-- `enterprise-services`, Path `src/main/java/com/example/enterprise`, File `AccountBalanceResource` in the Endpoint box (Controller File cleared), API `/accounts/123-456/balance`: a JAX-RS example.
+- Clear the Controller File: the Controller column says *not pulled*, the API column still fills.
+- `enterprise-services`, Path `src/main/java/com/example/enterprise`, File `AccountBalanceResource` in the Endpoint box (APIController files cleared), API `/accounts/123-456/balance`: a JAX-RS example.
 - File `Missing` gives *File not found* in that pane; the password `wrong` gives *Bitbucket rejected the login*.

@@ -29,7 +29,7 @@
           <span>API</span>
           <input id="api" name="api" placeholder="/spl-banking/enq/customer/portfolio/12345" autocomplete="off">
         </label>
-        <!-- Endpoint and Controller sections, built from #part-template -->
+        <!-- Endpoint and APIController sections, built from #part-template -->
         <div id="sections"></div>
         <div class="actions">
           <button id="go" type="submit">Pull from Bitbucket</button>
@@ -42,7 +42,7 @@
           <div class="card-title">Flow <span id="flow-state" class="state"></span></div>
           <div class="table-wrap">
             <table id="flow">
-              <thead><tr><th>HTTP</th><th>Path</th><th>Match</th><th>Endpoint</th><th>Controller</th></tr></thead>
+              <thead><tr><th>HTTP</th><th>Path</th><th>Match</th><th>Endpoint</th><th>API</th><th>Controller</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -113,21 +113,24 @@
           <span>Path</span>
           <input class="p-path" placeholder="src/main/java/…" autocomplete="off">
         </label>
-        <label>
-          <span>File</span>
-          <input class="p-file" autocomplete="off">
-        </label>
-        <label>
-          <span>Extension</span>
-          <select class="p-ext-select"></select>
-          <input class="p-ext" value=".java" placeholder=".ext" autocomplete="off" hidden>
-        </label>
+        <!-- one File + Extension pair per file, from #file-template -->
       </div>
       <p class="p-msg note" hidden></p>
-      <!-- The joined file URL; editable. The box's legend names it. -->
-      <input class="p-url endpoint-url" autocomplete="off" title="Joined from the parts above; you can edit it"
-             placeholder="Bitbucket file URL, or a path such as src/main/java/com/bank/PortfolioEndpoint.java">
+      <!-- one joined, editable file URL per file -->
+      <div class="p-urls"></div>
     </fieldset>
+  </template>
+
+  <template id="file-template">
+    <label>
+      <span class="p-file-title">File</span>
+      <input class="p-file" autocomplete="off">
+    </label>
+    <label>
+      <span>Extension</span>
+      <select class="p-ext-select"></select>
+      <input class="p-ext" value=".java" placeholder=".ext" autocomplete="off" hidden>
+    </label>
   </template>
 
   <template id="pane-template">

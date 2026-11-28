@@ -51,7 +51,7 @@ select:disabled { opacity: .6; }
 .endpoint legend { padding: 0 6px; font-weight: 600; color: var(--muted); font-size: 13px; }
 .endpoint select:not([hidden]) + input:not([hidden]) { margin-top: 8px; }
 /* URL / Project / Repository / Path / File / Extension on one line, sized to their usual contents. */
-.parts { display: grid; grid-template-columns: 1.6fr .8fr 1.1fr 2.2fr 1.3fr .8fr; gap: 0 10px; }
+.parts { display: grid; grid-template-columns: var(--cols, 1.6fr .8fr 1.1fr 2.2fr 1.3fr .8fr); gap: 0 10px; }
 .parts > label { min-width: 0; }
 .parts input, .parts select { min-width: 0; text-overflow: ellipsis; }
 @media (max-width: 1000px) { .parts { grid-template-columns: repeat(3, 1fr); } }
@@ -106,3 +106,4 @@ pre { margin: 0; overflow: auto; max-height: 75vh; background: var(--code-bg); f
 .pane-msg.error { color: var(--err); }
 .pane-code:empty { display: none; }
 .endpoint + .endpoint { margin-top: 4px; }
+.p-urls { display: grid; gap: 8px; }

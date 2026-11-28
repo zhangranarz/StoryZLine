@@ -249,82 +249,75 @@ const samePath = (a, b) => {
 };
 const section = m => m && { name: m.name || m.methodName, declLine: m.declLine, startLine: m.startLine, endLine: m.endLine };
 
-// Links the three layers. Each argument is a file's source, or null if it wasn't pulled.
-//   API -> Endpoint:   an Endpoint method with the same mapping path (and a compatible HTTP
-//                      method), else one with the same name (an implementation of the interface).
-//   Endpoint -> Controller: calls inside that Endpoint method on a field or variable of the
-//                      Controller's type; with no such field, calls to any method the Controller has.
-// apiPath (optional, used when there is no API file): only Endpoint mappings matching this eComm
-// API path become rows, each with match 'exact' or 'suffix' (see matchEndpoints).
-// Returns { rows, classes }. Each row: { methods, paths, match, api, endpoint, controller[], callLines[] }.
-function linkFlows(apiSrc, endpointSrc, controllerSrc, apiPath) {
-  const classes = { api: apiSrc && typeName(apiSrc), endpoint: endpointSrc && typeName(endpointSrc), controller: controllerSrc && typeName(controllerSrc) };
-  const apiEps = apiSrc ? findEndpoints(apiSrc) : [];
-  const epEps = endpointSrc ? findEndpoints(endpointSrc) : [];
-  const epMethods = endpointSrc ? findMethods(endpointSrc) : [];
-  const ctlMethods = controllerSrc ? findMethods(controllerSrc).filter(x => x.name !== classes.controller) : [];
-  const epCode = endpointSrc ? stripComments(endpointSrc) : '';
-  const epLineOf = endpointSrc ? lineIndex(epCode) : null;
+// Follows an eComm API through its code. Each source is a file's text, or null if not pulled.
+//   API path -> Endpoint: the Endpoint methods whose mapping matches apiPath (exact, or the end of
+//                         it); with no apiPath, every mapped Endpoint method.
+//   Endpoint -> API, Controller: calls inside that Endpoint method on a field, parameter or
+//                         variable typed as the API class or the Controller class (or, with no such
+//                         variable, calls to any method those files have). Each called method is
+//                         looked up by name in the API file and in the Controller file (its
+//                         implementation when the Controller implements the API).
+// Returns { rows, classes }. Each row: { methods, paths, match, endpoint, api[], controller[], callLines[] }.
+function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controller: controllerSrc = null, apiPath = '' } = {}) {
+  const classes = {
+    endpoint: endpointSrc && typeName(endpointSrc),
+    api: apiSrc && typeName(apiSrc),
+    controller: controllerSrc && typeName(controllerSrc),
+  };
+  if (!endpointSrc) return { rows: [], classes };
 
-  // Names of fields, parameters and locals in the Endpoint whose type is the Controller.
-  const ctlVars = classes.controller
-    ? [...epCode.matchAll(new RegExp(`\\b${classes.controller}(?:<[^>]*>)?\\s+([A-Za-z_$][\\w$]*)\\s*[;=,)]`, 'g'))].map(x => x[1])
-    : [];
-  const methodOf = ep => ep && epMethods.find(x => x.name === ep.methodName && x.endLine >= ep.declLine && x.startLine <= ep.declLine);
+  const epEps = findEndpoints(endpointSrc);
+  const epMethods = findMethods(endpointSrc);
+  const callees = {
+    api: apiSrc ? findMethods(apiSrc).filter(x => x.name !== classes.api) : [],
+    controller: controllerSrc ? findMethods(controllerSrc).filter(x => x.name !== classes.controller) : [],
+  };
+  const epCode = stripComments(endpointSrc);
+  const epLineOf = lineIndex(epCode);
 
-  // Starting points: the API file's mapped methods; without one, the Endpoint's.
-  let starts;
-  if (apiSrc) {
-    starts = apiEps.map(e => ({ methods: e.methods, paths: e.paths, api: e }));
-    if (!starts.length) starts = findMethods(apiSrc).filter(x => x.name !== classes.api).map(x => ({ methods: [], paths: [], api: { ...x, methodName: x.name } }));
-  } else if (normaliseApi(apiPath)) {
-    // One row per matching Endpoint method, with the paths that matched.
-    starts = [];
+  // Names of fields, parameters and locals in the Endpoint typed as the API or the Controller.
+  const typedVars = [classes.api, classes.controller].filter(Boolean).flatMap(type =>
+    [...epCode.matchAll(new RegExp(`\\b${type}(?:<[^>]*>)?\\s+([A-Za-z_$][\\w$]*)\\s*[;=,)]`, 'g'))].map(x => x[1]));
+  const knownName = name => callees.api.some(x => x.name === name) || callees.controller.some(x => x.name === name);
+  const methodOf = ep => epMethods.find(x => x.name === ep.methodName && x.endLine >= ep.declLine && x.startLine <= ep.declLine);
+
+  // Starting points: Endpoint mappings matching the API path, or all of them.
+  const starts = [];
+  if (normaliseApi(apiPath)) {
     for (const m of matchEndpoints(epEps, apiPath)) {
-      const same = starts.find(s => s.endpointEp.declLine === m.declLine);
+      const same = starts.find(s => s.ep.declLine === m.declLine);
       if (same) { if (!same.paths.includes(m.path)) same.paths.push(m.path); }
-      else starts.push({ methods: m.methods, paths: [m.path], match: m.match, endpointEp: m });
+      else starts.push({ methods: m.methods, paths: [m.path], match: m.match, ep: m });
     }
   } else {
-    starts = epEps.map(e => ({ methods: e.methods, paths: e.paths, endpointEp: e }));
-    if (!starts.length) starts = epMethods.filter(x => x.name !== classes.endpoint).map(x => ({ methods: [], paths: [], endpointMethod: x }));
+    for (const e of epEps) starts.push({ methods: e.methods, paths: e.paths, match: null, ep: e });
   }
 
   const rows = starts.map(s => {
-    let endpoint = null, how = null;
-    if (s.api && endpointSrc) {
-      const compatible = e => s.methods.includes('ANY') || e.methods.includes('ANY') || e.methods.some(v => s.methods.includes(v));
-      const byPath = s.paths.length && epEps.find(e => compatible(e) && e.paths.some(p => s.paths.some(q => samePath(p, q))));
-      if (byPath) { endpoint = methodOf(byPath) || byPath; how = 'same path'; }
-      else {
-        endpoint = epMethods.find(x => x.name === (s.api.methodName || s.api.name));
-        if (endpoint) how = 'same method name';
-      }
-    } else if (s.endpointEp) endpoint = methodOf(s.endpointEp) || s.endpointEp;
-    else if (s.endpointMethod) endpoint = s.endpointMethod;
-
-    // Controller methods called from the Endpoint method.
-    const controller = [];
+    const endpoint = methodOf(s.ep) || s.ep;
+    const found = { api: [], controller: [] };
     const callLines = [];
-    if (endpoint && controllerSrc && endpoint.bodyStart != null) {
+    if (endpoint.bodyStart != null) {
       const body = epCode.slice(endpoint.bodyStart, endpoint.bodyEnd + 1);
       // receiver.method( or something().method( (the receiver is then a call result).
       for (const c of body.matchAll(/(?:([A-Za-z_$][\w$]*)|\))\s*\.\s*([A-Za-z_$][\w$]*)\s*\(/g)) {
         const [, receiver, called] = c;
-        if (ctlVars.length ? !ctlVars.includes(receiver) : !ctlMethods.some(x => x.name === called)) continue;
+        if (typedVars.length ? !typedVars.includes(receiver) : !knownName(called)) continue;
         callLines.push(epLineOf(endpoint.bodyStart + c.index));
-        for (const target of ctlMethods.filter(x => x.name === called)) {
-          if (!controller.some(x => x.declLine === target.declLine)) controller.push({ ...section(target), call: `${receiver || '…'}.${called}()` });
+        for (const k of ['api', 'controller']) {
+          for (const target of callees[k].filter(x => x.name === called)) {
+            if (!found[k].some(x => x.declLine === target.declLine)) found[k].push({ ...section(target), call: `${receiver || '…'}.${called}()` });
+          }
         }
       }
     }
     return {
       methods: s.methods,
       paths: s.paths,
-      match: s.match || null,
-      api: section(s.api),
-      endpoint: endpoint && { ...section(endpoint), how },
-      controller,
+      match: s.match,
+      endpoint: section(endpoint),
+      api: found.api,
+      controller: found.controller,
       callLines: [...new Set(callLines)],
     };
   });
@@ -390,7 +383,7 @@ function analyse(src, api) {
   };
 }
 
-const api = { analyse, findEndpoints, findMethods, linkFlows, matchEndpoints, normaliseApi, stripComments };
+const api = { analyse, findEndpoints, findMethods, traceFlows, matchEndpoints, normaliseApi, stripComments };
 if (typeof module === 'object' && module.exports) module.exports = api;
 else window.StoryZJava = api;
 })();

@@ -2,8 +2,7 @@ package com.example.ecomm.enq;
 
 import java.util.List;
 
-import com.example.ecomm.enq.api.CustomerPortfolioApi;
-import com.example.ecomm.enq.controller.CustomerPortfolioController;
+import com.example.ecomm.enq.controller.CustomerPortfolioApi;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -11,16 +10,17 @@ import org.springframework.web.bind.annotation.*;
  * Customer portfolio enquiries (demo file for StoryZLine; not real code).
  *
  * Mapped under /enq/customer; the gateway adds a context path such as /spl-banking.
+ * The work is done through CustomerPortfolioApi, which CustomerPortfolioController implements.
  */
 @RestController
 @RequestMapping(value = "/enq/customer", produces = "application/json")
-public class CustomerPortfolioEndpoint implements CustomerPortfolioApi {
+public class CustomerPortfolioEndpoint {
 
-    private final CustomerPortfolioController controller;
+    private final CustomerPortfolioApi portfolioApi;
     private final AuditLog audit;
 
-    public CustomerPortfolioEndpoint(CustomerPortfolioController controller, AuditLog audit) {
-        this.controller = controller;
+    public CustomerPortfolioEndpoint(CustomerPortfolioApi portfolioApi, AuditLog audit) {
+        this.portfolioApi = portfolioApi;
         this.audit = audit;
     }
 
@@ -36,31 +36,31 @@ public class CustomerPortfolioEndpoint implements CustomerPortfolioApi {
         }
         String note = "braces inside text { } must not end the method";
         audit.log("getPortfolio", customerId);
-        return ResponseEntity.ok(controller.getPortfolio(customerId, currency));
+        return ResponseEntity.ok(portfolioApi.getPortfolio(customerId, currency));
     }
 
     // Same path as above, but POST: both methods are shown for that API.
     @PostMapping(value = "/portfolio/{customerId}", consumes = "application/json")
     public ResponseEntity<Void> updatePortfolio(@PathVariable String customerId, @RequestBody Portfolio portfolio) {
-        controller.validate(portfolio);
-        controller.savePortfolio(customerId, portfolio);
+        portfolioApi.validate(portfolio);
+        portfolioApi.savePortfolio(customerId, portfolio);
         return ResponseEntity.noContent().build();
     }
 
     /** One method, two paths and two HTTP methods. Try API: /enq/customer/overview */
     @RequestMapping(path = {"/summary", "/overview"}, method = {RequestMethod.GET, RequestMethod.POST})
-    public Summary summary() { return controller.summary(); }
+    public Summary summary() { return portfolioApi.summary(); }
 
     /** Try API: /spl-banking/enq/customer/portfolio/12345/holdings/H-9 */
     @DeleteMapping("/portfolio/{customerId}/holdings/{holdingId}")
     public void removeHolding(@PathVariable String customerId, @PathVariable String holdingId) {
-        controller.removeHolding(customerId, holdingId);
+        portfolioApi.removeHolding(customerId, holdingId);
     }
 
-    /** Implements the API method; its mapping comes from CustomerPortfolioApi. */
-    @Override
-    public byte[] exportPortfolio(String customerId) {
-        return controller.exportCsv(customerId);
+    /** Try API: /enq/customer/portfolio/12345/export */
+    @GetMapping("/portfolio/{customerId}/export")
+    public byte[] exportPortfolio(@PathVariable String customerId) {
+        return portfolioApi.exportCsv(customerId);
     }
 
     // @GetMapping("/commented-out") - commented out, so not an endpoint.

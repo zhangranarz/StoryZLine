@@ -122,7 +122,7 @@ $('conn').addEventListener('submit', async e => {
   }
 });
 
-// ---- The API / Endpoint / Controller sections ----
+// ---- The Endpoint and APIController boxes ----
 // Each joins Bitbucket URL (Settings) / Project / Repository / Path / File / Extension into a
 // file URL, with no ?at= branch (Bitbucket then shows the default branch). With an Excel list
 // loaded, Project and Repository become dropdowns (plus "Other…" to type a value).
@@ -136,16 +136,49 @@ let pickEntries = [];
 const sameUrl = (a, b) => String(a || '').trim().replace(/\/+$/, '').toLowerCase() ===
   String(b || '').trim().replace(/\/+$/, '').toLowerCase();
 
+// A box: shared URL / Project / Repository / Path, then one File + Extension pair per file.
 class Part {
-  constructor(key, label, filePlaceholder) {
+  // files: [{ key, title, label, placeholder }]: title heads the File box, label names the file elsewhere.
+  constructor(key, legend, files) {
     this.key = key;
-    this.label = label;
     this.el = $('part-template').content.firstElementChild.cloneNode(true);
-    this.el.querySelector('legend').textContent = label;
-    this.$('file').placeholder = filePlaceholder;
-    this.$('url').setAttribute('aria-label', label);
-    this.$('ext-select').innerHTML = EXTENSIONS.map(x => `<option value="${x}">${x}</option>`).join('') +
-      `<option value="">(no extension)</option><option value="${OTHER}">Other…</option>`;
+    this.el.querySelector('legend').textContent = legend;
+    // Columns: URL, Project, Repository, Path, then File + Extension for each file; the minimums
+    // keep short values such as a project key readable when two files share the line.
+    this.el.querySelector('.parts').style.setProperty('--cols',
+      'minmax(6rem, 1.4fr) minmax(6rem, .7fr) minmax(8.5rem, 1fr) minmax(8rem, 2fr)' + ' minmax(7rem, 1.3fr) minmax(5.5rem, .7fr)'.repeat(files.length));
+    this.files = files.map(f => {
+      const pair = $('file-template').content.cloneNode(true);
+      const file = { ...f, name: pair.querySelector('.p-file'), extSelect: pair.querySelector('.p-ext-select'), ext: pair.querySelector('.p-ext') };
+      pair.querySelector('.p-file-title').textContent = f.title;
+      file.name.placeholder = f.placeholder;
+      file.extSelect.innerHTML = EXTENSIONS.map(x => `<option value="${x}">${x}</option>`).join('') +
+        `<option value="">(no extension)</option><option value="${OTHER}">Other…</option>`;
+      this.el.querySelector('.parts').append(pair);
+      file.url = document.createElement('input');
+      file.url.className = 'p-url endpoint-url';
+      file.url.autocomplete = 'off';
+      file.url.title = `${f.label} file URL, joined from the parts above; you can edit it`;
+      file.url.placeholder = `${f.label}: Bitbucket file URL, or a path such as src/main/java/…/${f.placeholder}.java`;
+      file.url.setAttribute('aria-label', `${f.label} file URL`);
+      this.$('urls').append(file.url);
+
+      file.extSelect.addEventListener('change', e => {
+        if (e.target.value === OTHER) {
+          e.target.dataset.other = '1';
+          file.ext.value = '';
+          file.ext.hidden = false;
+          file.ext.focus();
+        } else {
+          delete e.target.dataset.other;
+          file.ext.value = e.target.value;
+          file.ext.hidden = true;
+        }
+        this.update();
+      });
+      for (const input of [file.name, file.ext]) input.addEventListener('input', () => this.update());
+      return file;
+    });
     $('sections').append(this.el);
 
     for (const k of LEVELS) {
@@ -165,46 +198,38 @@ class Part {
       });
       this.$(k).addEventListener('input', () => this.refresh());
     }
-    this.$('ext-select').addEventListener('change', e => {
-      if (e.target.value === OTHER) {
-        e.target.dataset.other = '1';
-        this.$('ext').value = '';
-        this.$('ext').hidden = false;
-        this.$('ext').focus();
-      } else {
-        delete e.target.dataset.other;
-        this.$('ext').value = e.target.value;
-        this.$('ext').hidden = true;
-      }
-      this.update();
-    });
-    for (const k of ['path', 'file', 'ext']) this.$(k).addEventListener('input', () => this.update());
+    this.$('path').addEventListener('input', () => this.update());
   }
 
   $(name) { return this.el.querySelector('.p-' + name); }
-  get url() { return this.$('url').value.trim(); }
 
-  // The settings used to read this part's URL (its own project and repository).
+  // The files to pull: those whose URL is filled in.
+  fileUrls() { return this.files.filter(f => f.url.value.trim()).map(f => ({ key: f.key, label: f.label, url: f.url.value.trim(), part: this })); }
+
+  // The settings used to read this box's URLs (its own project and repository).
   cfg(conn) { return { ...conn, project: this.$('project').value.trim(), repo: this.$('repo').value.trim() }; }
 
   restore(saved) {
     this.$('project').value = saved.project || '';
     this.$('repo').value = saved.repo || '';
     this.$('path').value = saved.path || '';
-    this.$('file').value = saved.fileName || '';
-    if (typeof saved.extension === 'string') this.$('ext').value = saved.extension;
-    // Show the extension in the dropdown, or under "Other…" when it isn't listed.
-    let v = this.$('ext').value.trim().toLowerCase();
-    if (v && !v.startsWith('.')) v = '.' + v;
-    const sel = this.$('ext-select');
-    sel.value = v === '' || EXTENSIONS.includes(v) ? v : OTHER;
-    this.$('ext').hidden = sel.value !== OTHER;
+    const files = saved.files || {};
+    for (const f of this.files) {
+      const s = files[f.key] || {};
+      f.name.value = s.fileName || '';
+      if (typeof s.extension === 'string') f.ext.value = s.extension;
+      // Show the extension in the dropdown, or under "Other…" when it isn't listed.
+      let v = f.ext.value.trim().toLowerCase();
+      if (v && !v.startsWith('.')) v = '.' + v;
+      f.extSelect.value = v === '' || EXTENSIONS.includes(v) ? v : OTHER;
+      f.ext.hidden = f.extSelect.value !== OTHER;
+    }
   }
 
   save() {
     store.set('part.' + this.key, JSON.stringify({
-      project: this.$('project').value.trim(), repo: this.$('repo').value.trim(),
-      path: this.$('path').value, fileName: this.$('file').value, extension: this.$('ext').value,
+      project: this.$('project').value.trim(), repo: this.$('repo').value.trim(), path: this.$('path').value,
+      files: Object.fromEntries(this.files.map(f => [f.key, { fileName: f.name.value, extension: f.ext.value }])),
     }));
   }
 
@@ -216,7 +241,7 @@ class Part {
     }
   }
 
-  // Fills Project and Repository from the Excel rows for the Bitbucket URL, then rebuilds the URL.
+  // Fills Project and Repository from the Excel rows for the Bitbucket URL, then rebuilds the URLs.
   refresh() {
     this.$('base').value = $('conn-url').value.trim();
     this.$('base').title = this.$('base').value;  // the box is narrow: show the whole URL on hover
@@ -249,46 +274,54 @@ class Part {
     this.update();
   }
 
-  // Rebuilds the joined URL. It stays as it is (and can be edited) until a part changes.
+  // Rebuilds each file's URL. It stays as it is (and can be edited) until a part changes.
   update() {
     this.save();
-    const parts = {
-      baseUrl: $('conn-url').value.trim(), project: this.$('project').value, repo: this.$('repo').value,
-      path: this.$('path').value, fileName: this.$('file').value, extension: this.$('ext').value,
-    };
-    const msg = this.$('msg');
-    try {
-      this.$('url').value = Loc.buildFileUrl(parts);
-      msg.hidden = true;
-    } catch (err) {
-      if (!parts.fileName.trim()) this.$('url').value = '';  // no file: nothing to pull for this part
-      msg.textContent = err.message;
-      msg.hidden = !(parts.path.trim() || parts.fileName.trim());  // no nagging before anything is typed
+    const problems = [];
+    for (const f of this.files) {
+      const parts = {
+        baseUrl: $('conn-url').value.trim(), project: this.$('project').value, repo: this.$('repo').value,
+        path: this.$('path').value, fileName: f.name.value, extension: f.ext.value,
+      };
+      if (!parts.fileName.trim()) { f.url.value = ''; continue; }  // no file: nothing to pull
+      try {
+        f.url.value = Loc.buildFileUrl(parts);
+      } catch (err) {
+        problems.push(this.files.length > 1 ? `${f.title}: ${err.message}` : err.message);
+      }
     }
+    this.$('msg').textContent = problems.join(' ');
+    this.$('msg').hidden = !problems.length;
   }
 }
 
-// Saved values from before the three sections existed fill the Endpoint section once.
+// Saved values from earlier versions: the single-file Endpoint box, and the Controller box.
+for (const [from, to, fileKey] of [['part.endpoint', 'part.endpoint', 'endpoint'], ['part.controller', 'part.apictl', 'controller']]) {
+  const old = store.json(from);
+  if (old && !old.files && !(from !== to && store.json(to))) {
+    store.set(to, JSON.stringify({ project: old.project, repo: old.repo, path: old.path, files: { [fileKey]: { fileName: old.fileName, extension: old.extension } } }));
+  }
+}
 if (!store.json('part.endpoint') && (store.json('endpointParts') || store.get('project'))) {
   const old = store.json('endpointParts') || {};
-  store.set('part.endpoint', JSON.stringify({ ...old, project: store.get('project'), repo: store.get('repo') }));
+  store.set('part.endpoint', JSON.stringify({ project: store.get('project'), repo: store.get('repo'), path: old.path, files: { endpoint: { fileName: old.fileName, extension: old.extension } } }));
 }
-for (const k of ['endpointParts', 'project', 'repo', 'location', 'branch', 'pickChoice', 'part.api']) store.remove(k);
+for (const k of ['endpointParts', 'project', 'repo', 'location', 'branch', 'pickChoice', 'part.api', 'part.controller']) store.remove(k);
 
 // The eComm API path picks the Endpoint method(s) to follow.
 $('api').value = store.get('api');
 $('api').addEventListener('input', () => store.set('api', $('api').value.trim()));
 
 const parts = [
-  new Part('endpoint', 'Endpoint', 'CustomerPortfolioEndpoint'),
-  new Part('controller', 'Controller', 'CustomerPortfolioController'),
+  new Part('endpoint', 'Endpoint', [{ key: 'endpoint', title: 'File', label: 'Endpoint', placeholder: 'CustomerPortfolioEndpoint' }]),
+  new Part('apictl', 'APIController', [
+    { key: 'api', title: 'API File', label: 'API', placeholder: 'CustomerPortfolioApi' },
+    { key: 'controller', title: 'Controller File', label: 'Controller', placeholder: 'CustomerPortfolioController' },
+  ]),
 ];
-// A new section starts with the Endpoint's project, repository and path.
+// A new box starts with the Endpoint's project and repository.
 const endpointSaved = store.json('part.endpoint') || {};
-for (const p of parts) {
-  const saved = store.json('part.' + p.key) || { project: endpointSaved.project, repo: endpointSaved.repo, path: endpointSaved.path };
-  p.restore(saved);
-}
+for (const p of parts) p.restore(store.json('part.' + p.key) || { project: endpointSaved.project, repo: endpointSaved.repo });
 const refreshAll = () => parts.forEach(p => p.refresh());
 
 // ---- Excel list (Settings) ----
@@ -387,8 +420,9 @@ $('pick-clear').addEventListener('click', () => {
   setPickStatus('List forgotten. Load another Excel file any time.');
 });
 
-// ---- Pull the files and follow API path -> Endpoint -> Controller ----
+// ---- Pull the files and follow API path -> Endpoint -> API -> Controller ----
 
+const FILE_ORDER = ['endpoint', 'api', 'controller'];
 let view = null;  // { files, flows, selected, panes, whole }
 
 $('form').addEventListener('submit', async e => {
@@ -401,26 +435,26 @@ $('form').addEventListener('submit', async e => {
     $(!conn.baseUrl ? ($('conn-url').hidden ? 'conn-url-select' : 'conn-url') : !conn.user ? 'conn-user' : 'conn-pass').focus();
     return;
   }
-  const chosen = parts.filter(p => p.url);
+  const chosen = parts.flatMap(p => p.fileUrls());
   if (!chosen.length) {
-    setStatus('Fill in File in the Endpoint (and Controller) box.', true);
-    parts[0].$('file').focus();
+    setStatus('Fill in the Endpoint File (and the API and Controller Files).', true);
+    parts[0].files[0].name.focus();
     return;
   }
   setStatus(`Pulling ${chosen.length} file${chosen.length === 1 ? '' : 's'}…`);
   $('go').disabled = true;
   try {
-    const results = await Promise.all(chosen.map(async p => {
+    const results = await Promise.all(chosen.map(async c => {
       let loc;
       try {
-        loc = Loc.resolveLocation(p.url, p.cfg(conn));
+        loc = Loc.resolveLocation(c.url, c.part.cfg(conn));
         const reply = await post('/api/get', { url: loc.rawUrl, connection: conn });
         const problem = Loc.responseProblem(reply,
           `File not found: ${loc.project}/${loc.repo}/${loc.path}${loc.ref ? ` at ${loc.ref}` : ''}.`);
-        if (problem) return { part: p, loc, error: problem, status: reply.status };
-        return { part: p, loc, content: reply.body };
+        if (problem) return { ...c, loc, error: problem, status: reply.status };
+        return { ...c, loc, content: reply.body };
       } catch (err) {
-        return { part: p, loc, error: err.message };
+        return { ...c, loc, error: err.message };
       }
     }));
     const ok = results.filter(r => r.content != null);
@@ -430,7 +464,7 @@ $('form').addEventListener('submit', async e => {
     render(results, $('api').value.trim());
     const failed = results.filter(r => r.error);
     setStatus(failed.length
-      ? `Pulled ${ok.length} of ${results.length} files. ${failed.map(r => `${r.part.label}: ${r.error}`).join(' ')}`
+      ? `Pulled ${ok.length} of ${results.length} files. ${failed.map(r => `${r.label}: ${r.error}`).join(' ')}`
       : `Pulled ${ok.length} file${ok.length === 1 ? '' : 's'}.`, failed.length > 0);
   } finally {
     $('go').disabled = false;
@@ -438,42 +472,45 @@ $('form').addEventListener('submit', async e => {
 });
 
 function render(results, apiPath) {
-  const files = Object.fromEntries(results.map(r => [r.part.key, r]));
+  const files = Object.fromEntries(results.map(r => [r.key, r]));
   const src = k => (files[k] && files[k].content != null ? files[k].content : null);
-  const flows = Java.linkFlows(null, src('endpoint'), src('controller'), apiPath);
+  const flows = Java.traceFlows({ endpoint: src('endpoint'), api: src('api'), controller: src('controller'), apiPath });
   view = { files, flows, selected: 0, panes: {}, whole: {} };
   $('result').hidden = false;
 
-  const name = m => (m ? `${esc(m.name)}()` : '<span class="none">—</span>');
-  const match = r => (r.match ? `<span class="pill ${r.match}">${r.match === 'exact' ? 'Exact match' : 'Matches end of API'}</span>` : '<span class="none">—</span>');
+  const none = '<span class="none">—</span>';
+  const notPulled = '<span class="none">not pulled</span>';
+  const names = list => list.map(m => `${esc(m.name)}()`).join(', ') || none;
+  const match = r => (r.match ? `<span class="pill ${r.match}">${r.match === 'exact' ? 'Exact match' : 'Matches end of API'}</span>` : none);
   $('flow').querySelector('tbody').innerHTML = flows.rows.map((r, i) => `
     <tr data-row="${i}" tabindex="0">
-      <td>${esc(r.methods.join(', ')) || '<span class="none">—</span>'}</td>
-      <td>${r.paths.map(p => `<code>${esc(p)}</code>`).join('<br>') || '<span class="none">—</span>'}</td>
+      <td>${esc(r.methods.join(', ')) || none}</td>
+      <td>${r.paths.map(p => `<code>${esc(p)}</code>`).join('<br>') || none}</td>
       <td>${match(r)}</td>
-      <td>${src('endpoint') != null ? name(r.endpoint) : '<span class="none">not pulled</span>'}</td>
-      <td>${src('controller') != null ? (r.controller.map(c => `${esc(c.name)}()`).join(', ') || '<span class="none">—</span>') : '<span class="none">not pulled</span>'}</td>
-    </tr>`).join('') || `<tr><td colspan="5" class="none">${apiPath ? 'No Endpoint mapping matches this API.' : 'No mappings found in the Endpoint.'}</td></tr>`;
+      <td>${r.endpoint ? `${esc(r.endpoint.name)}()` : none}</td>
+      <td>${src('api') != null ? names(r.api) : notPulled}</td>
+      <td>${src('controller') != null ? names(r.controller) : notPulled}</td>
+    </tr>`).join('') ||
+    `<tr><td colspan="6" class="none">${src('endpoint') == null ? 'The Endpoint file was not pulled.' : apiPath ? 'No Endpoint mapping matches this API.' : 'No mappings found in the Endpoint.'}</td></tr>`;
 
-  const linked = flows.rows.filter(r => r.endpoint && r.controller.length).length;
-  $('flow-state').textContent = flows.rows.length ? `${flows.rows.length} row${flows.rows.length === 1 ? '' : 's'}, ${linked} linked to the Controller` : '';
+  const linked = flows.rows.filter(r => r.api.length || r.controller.length).length;
+  $('flow-state').textContent = flows.rows.length ? `${flows.rows.length} row${flows.rows.length === 1 ? '' : 's'}, ${linked} linked past the Endpoint` : '';
   $('flow-state').className = 'state' + (linked ? ' ok' : '');
   const notes = [];
   if (!apiPath && src('endpoint') != null) notes.push('No API given: listing every mapping in the Endpoint.');
   if (apiPath && src('endpoint') != null && !flows.rows.length) notes.push('Showing the whole Endpoint file.');
-  if (src('controller') != null && src('endpoint') != null && flows.rows.length && !flows.rows.some(r => r.controller.length)) {
-    notes.push(`No calls to ${flows.classes.controller || 'the Controller'} were found in the Endpoint methods.`);
-  }
+  const called = [flows.classes.api, flows.classes.controller].filter(Boolean);
+  if (called.length && flows.rows.length && !linked) notes.push(`No calls to ${called.join(' or ')} were found in the Endpoint methods.`);
   $('flow-note').textContent = notes.join(' ');
   $('flow-note').hidden = !notes.length;
 
   $('panes').innerHTML = '';
-  for (const p of parts) {
-    if (!files[p.key]) continue;
+  for (const key of FILE_ORDER) {
+    if (!files[key]) continue;
     const pane = $('pane-template').content.firstElementChild.cloneNode(true);
-    pane.dataset.pane = p.key;
+    pane.dataset.pane = key;
     $('panes').append(pane);
-    view.panes[p.key] = pane;
+    view.panes[key] = pane;
   }
   select(0);
 }
@@ -489,8 +526,7 @@ function select(i) {
 // The line ranges and highlighted lines of a row in one pane.
 function rowParts(key, row) {
   if (!row) return { ranges: [], marks: [] };
-  const methods = key === 'api' ? [row.api] : key === 'endpoint' ? [row.endpoint] : row.controller;
-  const found = methods.filter(Boolean);
+  const found = (key === 'endpoint' ? [row.endpoint] : row[key]).filter(Boolean);
   const ranges = [];
   for (const [s, e] of found.map(m => [m.startLine, m.endLine]).sort((a, b) => a[0] - b[0])) {
     const prev = ranges[ranges.length - 1];
@@ -505,8 +541,8 @@ function drawPane(key) {
   const f = view.files[key];
   const pane = view.panes[key];
   const q = cls => pane.querySelector('.' + cls);
-  q('pane-label').textContent = f.part.label;
-  q('pane-file').textContent = f.loc ? f.loc.path.split('/').pop() : f.part.url;
+  q('pane-label').textContent = f.label;
+  q('pane-file').textContent = f.loc ? f.loc.path.split('/').pop() : f.url;
   q('pane-where').textContent = f.loc ? `${f.loc.project}/${f.loc.repo} · ${f.loc.path}` : '';
   q('pane-open').hidden = !f.loc;
   if (f.loc) q('pane-open').href = f.loc.browseUrl;
@@ -526,7 +562,7 @@ function drawPane(key) {
   const { ranges, marks } = rowParts(key, row);
   const whole = view.whole[key] || !ranges.length;
   msg.className = 'pane-msg note';
-  msg.textContent = row && !ranges.length ? `No ${f.part.label} method for this row: showing the whole file.` : '';
+  msg.textContent = row && !ranges.length ? `No ${f.label} method for this row: showing the whole file.` : '';
   msg.hidden = !msg.textContent;
 
   const lines = f.content.split(/\r?\n/);
@@ -580,7 +616,7 @@ $('panes').addEventListener('click', async e => {
   } else if (e.target.closest('.pane-copy')) {
     try {
       await navigator.clipboard.writeText(shownText(key));
-      setStatus(`${view.files[key].part.label} copied.`);
+      setStatus(`${view.files[key].label} copied.`);
     } catch {
       setStatus('Clipboard not available in this browser.', true);
     }
