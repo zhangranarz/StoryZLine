@@ -68,7 +68,7 @@ One row per repository. An empty **Bitbucket URL** or **Project key** cell means
    | File | the file name, text |
    | Extension | dropdown: `.java` (default), `.xml`, `.properties`, `.yml`, `.yaml`, `.json`, `.sql`, `.wsdl`, `.xsd`, `.kt`, `.groovy`, `.gradle`, `.jsp`, `.txt`, *(no extension)*, or **Other…** to type one; added unless File already ends with it |
 
-3. The **Endpoint** field below the box shows the joined Bitbucket file URL and updates as you change the parts. You can edit it before pulling:
+3. The last line of the **Endpoint** box shows the joined Bitbucket file URL and updates as you change the parts. You can edit it before pulling:
    `URL /projects/ Project /repos/ Repository /browse/ Path / File Extension`
 
    No branch is added, so Bitbucket uses the repository's default branch. To pull another branch, add `?at=<branch>` to the end of the Endpoint yourself.

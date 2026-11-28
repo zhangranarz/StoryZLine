@@ -45,8 +45,9 @@ select:disabled { opacity: .6; }
 .file-button span { display: inline-block; font-weight: 600; margin: 0; padding: 8px 14px; border-radius: 7px; border: 1px solid var(--accent); color: var(--accent); cursor: pointer; }
 .file-button input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .excel-bar { margin: -4px 0 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
-#build-msg { color: var(--err); margin: -4px 0 0; }
-.endpoint { margin: 0 0 12px; padding: 12px 14px 4px; border: 1px solid var(--border); border-radius: 8px; }
+#build-msg { color: var(--err); margin: -4px 0 8px; }
+.endpoint { margin: 0 0 12px; padding: 12px 14px 14px; border: 1px solid var(--border); border-radius: 8px; }
+.endpoint-url { font: 13px/1.5 ui-monospace, Consolas, "Cascadia Mono", monospace; }
 .endpoint legend { padding: 0 6px; font-weight: 600; color: var(--muted); font-size: 13px; }
 .endpoint select:not([hidden]) + input:not([hidden]) { margin-top: 8px; }
 /* URL / Project / Repository / Path / File / Extension on one line, sized to their usual contents. */

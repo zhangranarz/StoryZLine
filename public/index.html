@@ -61,12 +61,11 @@
             </label>
           </div>
           <p id="build-msg" class="note" hidden></p>
-        </fieldset>
-        <label>
-          <span>Endpoint</span>
-          <input id="location" name="location" required autocomplete="off"
+          <!-- The joined Endpoint URL; editable. The box's legend already says "Endpoint". -->
+          <input id="location" class="endpoint-url" name="location" required autocomplete="off" aria-label="Endpoint"
+                 title="Joined from the parts above; you can edit it"
                  placeholder="Bitbucket file URL, or a path such as src/main/java/com/bank/PortfolioEndpoint.java">
-        </label>
+        </fieldset>
         <div class="actions">
           <button id="go" type="submit">Pull from Bitbucket</button>
           <span id="status" role="status"></span>
