@@ -253,8 +253,7 @@ $('download').addEventListener('click', () => {
 // The Endpoint is joined from: Bitbucket URL (Settings) / Project key / Repository / Path /
 // File name / File extension, with no ?at= branch (Bitbucket then shows the default branch).
 // With an Excel list loaded, project and repository become dropdowns (plus "Other…" to type a
-// value), and its "Endpoint Java file location" values are offered for Path.
-// The list (no passwords) and the parts are remembered in this browser.
+// value); Path is always typed. The list (no passwords) and the parts are remembered in this browser.
 
 const XL = window.StoryZExcel;
 const LEVELS = ['project', 'repo'];                          // narrowed in this order
@@ -263,7 +262,6 @@ const OTHER = '__other__';
 const EXTENSIONS = ['.java', '.xml', '.properties', '.yml', '.yaml', '.json', '.sql', '.wsdl', '.xsd',
   '.kt', '.groovy', '.gradle', '.jsp', '.txt'];
 let pickEntries = [];
-let pickColumns = [];
 
 const sameUrl = (a, b) => String(a || '').trim().replace(/\/+$/, '').toLowerCase() ===
   String(b || '').trim().replace(/\/+$/, '').toLowerCase();
@@ -305,11 +303,10 @@ function resetAfter(key) {
     $(INPUT[k]).value = '';
     delete $('pick-' + k).dataset.other;
   }
-  $('pick-path').dataset.auto = '1';
 }
 
-// Fills the dropdowns and path suggestions from the Excel rows that fit the Bitbucket URL and
-// the levels before each one, then rebuilds the Endpoint.
+// Fills the dropdowns from the Excel rows that fit the Bitbucket URL and the levels before
+// each one, then rebuilds the Endpoint.
 function refreshPicks() {
   $('ep-base').value = $('conn-url').value.trim();
   let rows = pickEntries.filter(e => sameUrl(e.baseUrl, $('conn-url').value));
@@ -339,14 +336,6 @@ function refreshPicks() {
     }
     store.set(k, input.value.trim());
   }
-
-  // Offer the sheet's endpoint locations for Path, and use the first while Path is untouched.
-  const paths = [...new Set(rows.map(e => e.location).filter(Boolean))];
-  $('path-list').innerHTML = paths.map(p => `<option value="${esc(p)}"></option>`).join('');
-  if (paths.length && $('pick-path').dataset.auto && !paths.includes($('pick-path').value)) {
-    $('pick-path').value = paths[0];
-  }
-  if (!$('pick-path').value) $('pick-path').dataset.auto = '1';
 
   updateState();
   updateEndpoint();
@@ -411,15 +400,11 @@ function updateEndpoint() {
 
 function loadPickList(list, fromNewFile = false) {
   pickEntries = list.entries;
-  pickColumns = list.columns;
   $('pick-clear').hidden = false;
   $('pick-state').textContent = `${list.entries.length} row${list.entries.length === 1 ? '' : 's'} from ${list.source}`;
   $('pick-state').className = 'state ok';
   showUrlChoices(fromNewFile);
-  if (fromNewFile) {
-    for (const k of LEVELS) $(INPUT[k]).value = '';
-    $('pick-path').dataset.auto = '1';
-  }
+  if (fromNewFile) for (const k of LEVELS) $(INPUT[k]).value = '';
   refreshPicks();
 }
 
@@ -459,9 +444,7 @@ $('conn-url-select').addEventListener('change', e => {
     $('conn-url').hidden = true;
     setLoginUrl(e.target.value);
   }
-  resetAfter('url');
-  $(INPUT.project).value = '';
-  delete $('pick-project').dataset.other;
+  resetAfter('url');  // a new server: start again from its first project and repository
   refreshPicks();
 });
 $('conn-url').addEventListener('input', refreshPicks);
@@ -484,11 +467,7 @@ for (const k of LEVELS) {
   $(INPUT[k]).addEventListener('input', refreshPicks);
 }
 
-$('pick-path').addEventListener('input', () => {
-  delete $('pick-path').dataset.auto;   // typed by hand: don't replace it from the sheet
-  updateEndpoint();
-});
-for (const id of ['pick-name', 'pick-ext']) $(id).addEventListener('input', updateEndpoint);
+for (const id of ['pick-path', 'pick-name', 'pick-ext']) $(id).addEventListener('input', updateEndpoint);
 
 $('pick-template').addEventListener('click', () => saveFile('storyzline-list.csv', XL.TEMPLATE_CSV, 'text/csv'));
 
@@ -509,7 +488,6 @@ $('pick-path').value = savedParts.path || '';
 $('pick-name').value = savedParts.fileName || '';
 if (typeof savedParts.extension === 'string') $('pick-ext').value = savedParts.extension;
 showExtension();
-if (!$('pick-path').value) $('pick-path').dataset.auto = '1';
 
 const savedList = store.json('pickList');
 if (savedList && Array.isArray(savedList.entries) && savedList.entries.length) loadPickList(savedList);

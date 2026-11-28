@@ -49,8 +49,7 @@
             </label>
             <label class="wide">
               <span>Path</span>
-              <input id="pick-path" list="path-list" placeholder="src/main/java/com/yourcompany/ecomm/enq" autocomplete="off">
-              <datalist id="path-list"></datalist>
+              <input id="pick-path" placeholder="src/main/java/com/yourcompany/ecomm/enq" autocomplete="off">
             </label>
             <label>
               <span>File name</span>
@@ -112,7 +111,7 @@
             <span id="pick-state" class="state"></span>
             <span id="pick-status" role="status"></span>
           </div>
-          <p class="note">Excel columns: <b>Bitbucket URL</b>, <b>Project key</b>, <b>Repository</b>, <b>Branch</b>, <b>Endpoint Java file location</b> (first sheet, .xlsx or .csv). The Bitbucket URL below is filled in from the list; project keys, repositories and paths are offered in the eComm API tab. The file is read in this browser only.</p>
+          <p class="note">Excel columns: <b>Bitbucket URL</b>, <b>Project key</b>, <b>Repository</b>, one row per repository (first sheet, .xlsx or .csv). An empty Bitbucket URL or Project key cell means "same as the row above". The Bitbucket URL below is filled in from the list; project keys and repositories are offered in the eComm API tab. The file is read in this browser only.</p>
         </div>
         <div class="grid">
           <label class="wide">

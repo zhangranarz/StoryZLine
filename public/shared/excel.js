@@ -1,6 +1,5 @@
 // Reads the first sheet of an .xlsx file (or a .csv) into rows, and turns rows with
-// Bitbucket URL / Project key / Repository / Branch / Endpoint Java file location headers
-// into pick-list entries. No libraries: an .xlsx file is a zip of XML files, unzipped with
+// Bitbucket URL / Project key / Repository headers into pick-list entries. No libraries: an .xlsx file is a zip of XML files, unzipped with
 // the browser's built-in DecompressionStream. Shared by the browser page and the Node tests.
 (function () {
   'use strict';
@@ -150,13 +149,14 @@
 
   // ---- pick list ----------------------------------------------------------------------
 
+  // Other columns (Branch, notes, ...) are ignored.
   const COLUMNS = [
-    { key: 'baseUrl', label: 'Bitbucket URL', required: true, match: h => h.includes('bitbucket') || h === 'url' || h === 'baseurl' },
-    { key: 'project', label: 'Project key', required: true, match: h => h.startsWith('project') || h === 'workspace' },
-    { key: 'repo', label: 'Repository', required: true, match: h => h.startsWith('repo') },
-    { key: 'branch', label: 'Branch', match: h => h.startsWith('branch') },
-    { key: 'location', label: 'Endpoint Java file location', match: h => h.includes('location') || h.startsWith('endpoint') || h === 'folder' },
+    { key: 'baseUrl', label: 'Bitbucket URL', match: h => h.includes('bitbucket') || h === 'url' || h === 'baseurl' },
+    { key: 'project', label: 'Project key', match: h => h.startsWith('project') || h === 'workspace' },
+    { key: 'repo', label: 'Repository', match: h => h.startsWith('repo') },
   ];
+  // A blank cell in these columns means "same as the row above", as with merged cells.
+  const FILL_DOWN = ['baseUrl', 'project'];
 
   const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -169,21 +169,25 @@
         const i = headers.findIndex((x, j) => x && col.match(x) && !Object.values(map).includes(j));
         if (i >= 0) map[col.key] = i;
       }
-      if (COLUMNS.filter(c => c.required).every(c => c.key in map)) {
+      if (COLUMNS.every(c => c.key in map)) {
         const entries = [];
         const seen = new Set();
+        let above = {};
         for (const r of rows.slice(h + 1)) {
           const e = {};
-          for (const col of COLUMNS) e[col.key] = col.key in map ? String(r[map[col.key]] || '').trim() : '';
-          if (!e.baseUrl || !e.project || !e.repo) continue;
+          for (const col of COLUMNS) e[col.key] = String(r[map[col.key]] || '').trim();
+          if (!e.repo) continue;  // a row without a repository is blank or a note
+          for (const k of FILL_DOWN) if (!e[k]) e[k] = above[k] || '';
+          if (!e.baseUrl || !e.project) continue;
+          above = e;
           const id = COLUMNS.map(c => e[c.key]).join('\u0000');
           if (!seen.has(id)) { seen.add(id); entries.push(e); }
         }
         if (!entries.length) throw new ExcelError('The sheet has the right headers but no filled-in rows.');
-        return { entries, columns: COLUMNS.filter(c => c.key in map).map(c => c.key) };
+        return { entries, columns: COLUMNS.map(c => c.key) };
       }
     }
-    throw new ExcelError('Could not find the header row. The first sheet needs columns named "Bitbucket URL", "Project key" and "Repository" (plus optional "Branch" and "Endpoint Java file location").');
+    throw new ExcelError('Could not find the header row. The first sheet needs columns named "Bitbucket URL", "Project key" and "Repository".');
   }
 
   async function readTable(name, buf) {
@@ -192,8 +196,9 @@
     return readXlsx(buf);
   }
 
-  const TEMPLATE_CSV = 'Bitbucket URL,Project key,Repository,Branch,Endpoint Java file location\r\n' +
-    'https://bitbucket.yourcompany.com,ECOM,ecomm-api,develop,src/main/java/com/yourcompany/ecomm/endpoint\r\n';
+  const TEMPLATE_CSV = 'Bitbucket URL,Project key,Repository\r\n' +
+    'https://bitbucket.yourcompany.com,ECOM,ecomm-api\r\n' +
+    ',,ecomm-batch\r\n';
 
   const api = { readTable, readXlsx, readCsv, toEntries, readZip, COLUMNS, TEMPLATE_CSV, ExcelError };
   if (typeof module === 'object' && module.exports) module.exports = api;

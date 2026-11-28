@@ -43,13 +43,15 @@ If it doesn't work:
 
 ## Pick from Excel
 
-Instead of typing locations, keep them in an Excel sheet. The first sheet needs a header row with these columns (any order; a title row above it is fine):
+Instead of typing Bitbucket details, keep them in an Excel sheet. The first sheet needs a header row with these columns (any order; a title row above it is fine; other columns such as Branch are ignored):
 
-| Bitbucket URL | Project key | Repository | Branch | Endpoint Java file location |
-|---|---|---|---|---|
-| https://bitbucket.yourcompany.com | ECOM | ecomm-api | develop | src/main/java/com/yourcompany/ecomm/endpoint |
+| Bitbucket URL | Project key | Repository |
+|---|---|---|
+| https://bitbucket.yourcompany.com | ECOM | ecomm-api |
+| | | ecomm-batch |
+| | PAY | pay-api |
 
-*Branch* and *Endpoint Java file location* are optional. **Download template** in the page gives you a CSV to start from.
+One row per repository. An empty **Bitbucket URL** or **Project key** cell means "same as the row above", so you only need to write them once (merged cells work too). **Download template** in Settings gives you a CSV to start from.
 
 1. In the **⚙ Settings** tab, click **Load Excel list…** and choose the `.xlsx` (or `.csv`) file. It is read in your browser only, and remembered there until you click **Forget list**. The **Bitbucket URL** is filled in from it (a dropdown if the sheet has several; **Other URL…** to type one).
 2. In the **eComm API** tab, fill in the **Endpoint parts**:
@@ -58,7 +60,7 @@ Instead of typing locations, keep them in an Excel sheet. The first sheet needs 
    |---|---|
    | Bitbucket URL | filled in from Settings |
    | Project key, Repository | dropdowns from the sheet, Repository narrowed by Project key; **Other…** to type a value (plain text boxes without a sheet) |
-   | Path | text; the sheet's *Endpoint Java file location* values are suggested, and the first one is filled in while Path is empty |
+   | Path | text |
    | File name | text |
    | File extension | dropdown: `.java` (default), `.xml`, `.properties`, `.yml`, `.yaml`, `.json`, `.sql`, `.wsdl`, `.xsd`, `.kt`, `.groovy`, `.gradle`, `.jsp`, `.txt`, *(no extension)*, or **Other…** to type one; added unless the file name already ends with it |
 

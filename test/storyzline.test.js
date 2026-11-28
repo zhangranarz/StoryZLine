@@ -306,10 +306,35 @@ test('CSV list: header found below a title, semicolons, quotes and duplicates', 
     ';;;;\r\n' +
     'https://git.example.com;PAY;pay-api;main;src/main/java/pay\r\n';
   const { entries, columns } = toEntries(readCsv(csv));
-  assert.deepStrictEqual(columns, ['baseUrl', 'project', 'repo', 'branch', 'location']);
-  assert.strictEqual(entries.length, 2);
-  assert.deepStrictEqual(entries[0], { baseUrl: 'https://git.example.com', project: 'ECOM', repo: 'ecomm-api', branch: 'develop', location: 'src/main/java/a;b' });
+  assert.deepStrictEqual(columns, ['baseUrl', 'project', 'repo']);
+  // Branch and Endpoint Java file location are not read; the duplicate row is dropped.
+  assert.deepStrictEqual(entries, [
+    { baseUrl: 'https://git.example.com', project: 'ECOM', repo: 'ecomm-api' },
+    { baseUrl: 'https://git.example.com', project: 'PAY', repo: 'pay-api' },
+  ]);
   assert.throws(() => toEntries([['Name', 'Value'], ['a', 'b']]), /header row/);
+});
+
+test('an empty Bitbucket URL or Project key cell means "same as above"', () => {
+  // Laid out like a real list: the URL is only written on the first row.
+  const rows = [
+    ['Bitbucket URL', 'Project key', 'Repository', 'Branch'],
+    ['https://bitbucket.example.com/', 'SPL', 'ecomm-services', 'Develop'],
+    ['', 'SPL', 'enterprise-services', 'Develop'],
+    ['', '', 'batch-services', ''],
+    ['', 'PAY', 'pay-api', ''],
+    ['', '', '', 'a note in the Branch column'],
+    ['https://other.example.com', 'CARD', 'card-api', ''],
+  ];
+  assert.deepStrictEqual(toEntries(rows).entries, [
+    { baseUrl: 'https://bitbucket.example.com/', project: 'SPL', repo: 'ecomm-services' },
+    { baseUrl: 'https://bitbucket.example.com/', project: 'SPL', repo: 'enterprise-services' },
+    { baseUrl: 'https://bitbucket.example.com/', project: 'SPL', repo: 'batch-services' },
+    { baseUrl: 'https://bitbucket.example.com/', project: 'PAY', repo: 'pay-api' },
+    { baseUrl: 'https://other.example.com', project: 'CARD', repo: 'card-api' },
+  ]);
+  // The first row can't borrow from above.
+  assert.throws(() => toEntries([['Bitbucket URL', 'Project key', 'Repository'], ['', 'SPL', 'x']]), /no filled-in rows/);
 });
 
 // Builds a zip the way Excel does (deflated entries, central directory at the end).
@@ -362,9 +387,10 @@ test('reads the first sheet of an .xlsx file', async () => {
   const rows = await readTable('Endpoints.xlsx', xlsx);
   assert.deepStrictEqual(rows[0], ['Bitbucket URL', 'Project key', 'Repository', 'Branch', 'Endpoint Java file location']);
   const { entries } = toEntries(rows);
+  assert.strictEqual(rows[1][3], 'feature/a&b');  // entities decoded
   assert.deepStrictEqual(entries, [
-    { baseUrl: 'https://git.example.com/bitbucket', project: 'ECOM', repo: 'ecomm-api', branch: 'feature/a&b', location: '' },
-    { baseUrl: 'https://git.example.com/bitbucket', project: '2024', repo: 'legacy', branch: '', location: 'src/main/java' },
+    { baseUrl: 'https://git.example.com/bitbucket', project: 'ECOM', repo: 'ecomm-api' },
+    { baseUrl: 'https://git.example.com/bitbucket', project: '2024', repo: 'legacy' },
   ]);
   await assert.rejects(readXlsx(Buffer.from('not a zip')), /not an \.xlsx/);
   await assert.rejects(readTable('old.xls', Buffer.alloc(0)), /\.xls files are not supported/);
