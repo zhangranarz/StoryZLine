@@ -3,7 +3,15 @@
 Serves public/ and proxies authenticated GETs to Bitbucket, with the same rules as server.js
 and lib/proxy.js. Listens on 127.0.0.1 only.
 
-    python server.py [--port 5180] [--open]
+    python server.py [--port 5180] [--open] [--proxy auto|system|direct|http://host:port]
+
+--proxy (or STORYZLINE_PROXY):
+  auto    (default) use the Windows proxy, but connect directly if the proxy asks for a login
+          (407). Company proxies often need a Windows sign-in Python can't do, while the
+          internal Bitbucket is reachable directly over the VPN.
+  system  always use the Windows proxy settings.
+  direct  never use a proxy.
+  URL     use this proxy, e.g. http://proxy.bank.com:8080 or http://user:pass@proxy:8080.
 """
 import argparse
 import base64
@@ -20,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PUBLIC = os.path.join(ROOT, "public")
 MAX_BYTES = 5 * 1024 * 1024
+PROXY_MODE = "auto"
 TYPES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}
 
 
@@ -72,10 +81,39 @@ def proxy_get(url, conn):
     elif password:
         headers["Authorization"] = "Bearer " + password
 
-    # Uses the Windows proxy settings and certificate store, like the browser.
-    opener = urllib.request.build_opener(redirect_handler(base_url))
+    # A fresh Request per attempt: urllib rewrites a Request in place when it routes it through a proxy.
+    req = lambda: urllib.request.Request(url, headers=headers)
+    where = urllib.parse.urlsplit(url).netloc
+    if PROXY_MODE == "direct":
+        return fetch_once(req, base_url, {}, where)
+    if PROXY_MODE not in ("auto", "system"):
+        return fetch_once(req, base_url, {"http": PROXY_MODE, "https": PROXY_MODE}, where)
     try:
-        with opener.open(urllib.request.Request(url, headers=headers), timeout=20) as resp:
+        result = fetch_once(req, base_url, None, where)
+    except ProxyError as e:
+        if PROXY_MODE != "auto" or "407" not in str(e):
+            raise
+        result = {"status": 407}
+    if PROXY_MODE == "auto" and result["status"] == 407:
+        # The Windows proxy wants a sign-in Python can't do; internal Bitbucket is usually reachable directly.
+        try:
+            return fetch_once(req, base_url, {}, where)
+        except ProxyError as e:
+            raise ProxyError("%s The Windows proxy also refused (407 Proxy Authentication Required). "
+                             "If Bitbucket is only reachable through the proxy, start with "
+                             "--proxy http://user:password@proxy-host:port." % e, e.status)
+    return result
+
+
+def fetch_once(make_request, base_url, proxies, where):
+    """proxies: None = Windows proxy settings, {} = direct, or a urllib proxy map."""
+    # Uses the Windows certificate store, like the browser.
+    handlers = [redirect_handler(base_url)]
+    if proxies is not None:
+        handlers.append(urllib.request.ProxyHandler(proxies))
+    opener = urllib.request.build_opener(*handlers)
+    try:
+        with opener.open(make_request(), timeout=20) as resp:
             return {"status": resp.status, "contentType": resp.headers.get("Content-Type", ""),
                     "body": read_limited(resp).decode("utf-8", "replace")}
     except urllib.error.HTTPError as e:
@@ -83,7 +121,8 @@ def proxy_get(url, conn):
                 "body": read_limited(e).decode("utf-8", "replace")}
     except (urllib.error.URLError, OSError) as e:
         reason = getattr(e, "reason", e)
-        raise ProxyError("Could not reach Bitbucket at %s: %s" % (urllib.parse.urlsplit(url).netloc, reason), 502)
+        route = "directly" if proxies == {} else "through the proxy"
+        raise ProxyError("Could not reach Bitbucket at %s %s: %s." % (where, route, reason), 502)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -153,7 +192,13 @@ def main():
     parser = argparse.ArgumentParser(description="StoryZLine server (Python)")
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT") or 5180))
     parser.add_argument("--open", action="store_true", help="open the page in the browser")
+    parser.add_argument("--proxy", default=os.environ.get("STORYZLINE_PROXY") or "auto",
+                        help="auto (default), system, direct, or a proxy URL; see the top of server.py")
     args = parser.parse_args()
+    global PROXY_MODE
+    PROXY_MODE = args.proxy.strip()
+    if PROXY_MODE not in ("auto", "system", "direct") and not re.match(r"^https?://", PROXY_MODE, re.I):
+        parser.error("--proxy must be auto, system, direct or an http(s):// proxy URL")
     try:
         httpd = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     except OSError as e:
@@ -162,6 +207,9 @@ def main():
         sys.exit(1)
     url = "http://127.0.0.1:%d" % args.port
     print("StoryZLine (Python) running at %s  - close this window or press Ctrl+C to stop" % url, flush=True)
+    system = urllib.request.getproxies().get("https") or urllib.request.getproxies().get("http")
+    shown = re.sub(r"//[^/@]*@", "//***@", PROXY_MODE)  # never print a proxy password
+    print("Proxy mode: %s (Windows proxy: %s)" % (shown, system or "none"), flush=True)
     if args.open:
         webbrowser.open(url)
     try:

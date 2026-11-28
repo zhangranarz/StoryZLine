@@ -102,6 +102,7 @@
       401: 'Bitbucket rejected the login. Check the user ID and password (or access token).',
       403: 'This login has no read access here.',
       404: notFound,
+      407: 'The company proxy asked for a login (407 Proxy Authentication Required). With the Python server, start it with --proxy direct (on the VPN) or --proxy http://user:password@proxy-host:port.',
     };
     if (reply.status < 200 || reply.status >= 300) return hints[reply.status] || `Bitbucket returned HTTP ${reply.status}.`;
     if (/text\/html/i.test(reply.contentType || '')) {

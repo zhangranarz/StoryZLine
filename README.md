@@ -37,6 +37,7 @@ If it doesn't work:
 - *"Python was not found; run without arguments to install from the Microsoft Store"*: that is a Windows shortcut, not Python. Python isn't installed.
 - *Window flashes and closes*: open a Command Prompt in the folder and run `start.cmd` there to see the message.
 - *`EADDRINUSE`*: something already uses port 5180. Run `set PORT=5181` then `start.cmd`, and open http://127.0.0.1:5181.
+- *"Tunnel connection failed: 407 Proxy Authentication Required"* (Python server): the company web proxy wants a Windows sign-in Python can't do. The Python server now connects directly when that happens (`--proxy auto`, the default), which works for an internal Bitbucket on the VPN. If it still fails: `python server.py --open --proxy direct`, or, if Bitbucket is only reachable through the proxy, `--proxy http://user:password@proxy-host:port`.
 - *"Could not reach Bitbucket"*: that laptop can't reach the Bitbucket server. Connect to the company network/VPN and check the URL opens in its browser.
 - *`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`* or *`SELF_SIGNED_CERT_IN_CHAIN`*: your company's certificate authority. Run `set NODE_EXTRA_CA_CERTS=C:\path\to\corp-ca.pem` before `start.cmd`.
 - The server only accepts connections from the computer it runs on. Opening `127.0.0.1:5180` on one laptop never reaches the server on another; run it on each laptop.

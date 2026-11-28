@@ -210,3 +210,53 @@ test('PowerShell server behaves the same', { skip: !hasPowerShell && 'Windows Po
 
 test('Python server behaves the same', { skip: !python && 'Python 3.7+ not available' }, () =>
   checkSpawnedServer(python, ['-u', path.join(__dirname, '..', 'server.py'), '--port', '5193'], 5193));
+
+test('Python server goes direct when the company proxy demands a login (407)', { skip: !python && 'Python 3.7+ not available' }, async () => {
+  const { mock, baseUrl } = await startMockBitbucket();
+  // A proxy that refuses everything, like a company proxy wanting a Windows sign-in.
+  const seen = [];
+  const proxy = http.createServer((req, res) => {
+    seen.push(req.method);
+    res.writeHead(407, { 'Proxy-Authenticate': 'NTLM' });
+    res.end();
+  });
+  proxy.on('connect', (req, socket) => {
+    seen.push('CONNECT');
+    socket.end('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: NTLM\r\nContent-Length: 0\r\n\r\n');
+  });
+  await new Promise(r => proxy.listen(0, '127.0.0.1', r));
+  const proxyUrl = `http://127.0.0.1:${proxy.address().port}`;
+  const env = { ...process.env, HTTP_PROXY: proxyUrl, HTTPS_PROXY: proxyUrl, http_proxy: proxyUrl, https_proxy: proxyUrl };
+  for (const k of ['NO_PROXY', 'no_proxy']) delete env[k];
+  const child = spawn(python, ['-u', path.join(__dirname, '..', 'server.py'), '--port', '5194'], { env });
+  let out = '';
+  child.stdout.on('data', d => { out += d; });
+  child.stderr.on('data', d => { out += d; });
+  const connection = { baseUrl, user: 'jdoe', password: 's3cret' };
+  const post = body => fetch('http://127.0.0.1:5194/api/get', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  try {
+    for (let i = 0; i < 100 && !out.includes('Proxy mode'); i++) await new Promise(r => setTimeout(r, 100));
+    assert.match(out, /Proxy mode: auto/);
+
+    // Plain http: the proxy answers 407, then StoryZLine connects directly and gets the file.
+    const loc = resolveLocation('src/PortfolioEndpoint.java', { baseUrl, project: 'ECOM', repo: 'api', branch: 'main' });
+    const file = await (await post({ url: loc.rawUrl, connection })).json();
+    assert.strictEqual(file.status, 200);
+    assert.strictEqual(file.body, JAVA);
+    assert.ok(seen.includes('GET'), 'request should have tried the proxy first');
+
+    // https: the proxy refuses the tunnel ("Tunnel connection failed: 407"); the direct retry is also
+    // attempted (it fails here because the mock has no TLS) and the error names both.
+    const httpsBase = baseUrl.replace('http:', 'https:');
+    const r = await post({ url: httpsBase + '/x', connection: { ...connection, baseUrl: httpsBase } });
+    assert.strictEqual(r.status, 502);
+    assert.match((await r.json()).error, /directly.*also refused \(407/s);
+    assert.ok(seen.includes('CONNECT'), 'https request should have tried the proxy tunnel first');
+  } finally {
+    child.kill();
+    proxy.close();
+    mock.close();
+  }
+});
