@@ -154,7 +154,7 @@ class Part {
     this.el.querySelector('.parts').style.setProperty('--cols',
       'minmax(6rem, 1.4fr) minmax(6rem, .7fr) minmax(8.5rem, 1fr)' + (ownPath ? '' : ' minmax(8rem, 2fr)') +
       (multi ? '' : ' minmax(7rem, 1.3fr) minmax(5.5rem, .7fr)'));
-    if (ownPath) this.$('path').closest('label').hidden = true;
+    if (ownPath) this.$('path').closest('label').remove();  // no Path for the whole box
     if (multi) this.el.append(this.$('msg'));
     this.files = files.map(f => {
       const pair = $('file-template').content.cloneNode(true);
@@ -230,7 +230,7 @@ class Part {
       });
       this.$(k).addEventListener('input', () => this.refresh());
     }
-    this.$('path').addEventListener('input', () => this.update());
+    if (this.$('path')) this.$('path').addEventListener('input', () => this.update());
   }
 
   $(name) { return this.el.querySelector('.p-' + name); }
@@ -244,7 +244,7 @@ class Part {
   restore(saved) {
     this.$('project').value = saved.project || '';
     this.$('repo').value = saved.repo || '';
-    this.$('path').value = saved.path || '';
+    if (this.$('path')) this.$('path').value = saved.path || '';
     const files = saved.files || {};
     for (const f of this.files) {
       const s = files[f.key] || {};
@@ -262,7 +262,7 @@ class Part {
 
   save() {
     store.set('part.' + this.key, JSON.stringify({
-      project: this.$('project').value.trim(), repo: this.$('repo').value.trim(), path: this.$('path').value,
+      project: this.$('project').value.trim(), repo: this.$('repo').value.trim(), ...(this.$('path') ? { path: this.$('path').value } : {}),
       files: Object.fromEntries(this.files.map(f => [f.key, { fileName: f.name.value, extension: f.ext.value, ...(f.path ? { path: f.path.value } : {}) }])),
     }));
   }
