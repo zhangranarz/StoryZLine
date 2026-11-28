@@ -294,7 +294,6 @@ function showUrlChoices(fromNewFile) {
   sel.value = match || OTHER;
   sel.hidden = false;
   $('conn-url').hidden = Boolean(match);
-  $('conn-url-hint').textContent = urls.length > 1 ? `(${urls.length} in the Excel list)` : '(from the Excel list)';
 }
 
 // Clears the levels after `key`, so they fall back to the first value that fits.
@@ -478,7 +477,6 @@ $('pick-clear').addEventListener('click', () => {
   $('pick-state').textContent = '';
   $('conn-url-select').hidden = true;
   $('conn-url').hidden = false;
-  $('conn-url-hint').textContent = '';
   refreshPicks();
   setPickStatus('List forgotten. Load another Excel file any time.');
 });
