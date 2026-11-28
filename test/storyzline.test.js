@@ -425,3 +425,67 @@ test('reads the first sheet of an .xlsx file', async () => {
   await assert.rejects(readXlsx(Buffer.from('not a zip')), /not an \.xlsx/);
   await assert.rejects(readTable('old.xls', Buffer.alloc(0)), /\.xls files are not supported/);
 });
+
+// ---- Demo kit (samples/ and tools/mock_bitbucket.py) ----
+
+const fs = require('fs');
+const SAMPLES = path.join(__dirname, '..', 'samples');
+const sample = p => fs.readFileSync(path.join(SAMPLES, p), 'utf8');
+const SPRING = 'ecomm-services/src/main/java/com/example/ecomm/enq/CustomerPortfolioEndpoint.java';
+const JAXRS = 'enterprise-services/src/main/java/com/example/enterprise/AccountBalanceResource.java';
+
+test('demo files give the results listed in samples/README.md', () => {
+  const found = (file, api) => analyse(sample(file), api).matches.map(m => `${m.methods.join('|')} ${m.methodName} ${m.match}`);
+  assert.deepStrictEqual(found(SPRING, '/spl-banking/enq/customer/portfolio/12345'),
+    ['GET getPortfolio suffix', 'POST updatePortfolio suffix']);
+  assert.deepStrictEqual(found(SPRING, '/enq/customer/overview'), ['GET|POST summary exact']);
+  assert.deepStrictEqual(found(SPRING, '/spl-banking/enq/customer/portfolio/12345/holdings/H-9'), ['DELETE removeHolding suffix']);
+  assert.deepStrictEqual(found(SPRING, '/enq/customer/unknown'), []);
+  assert.deepStrictEqual(found(JAXRS, '/accounts/123-456/balance'), ['GET balance exact']);
+  assert.deepStrictEqual(found(JAXRS, '/spl-banking/accounts/123-456/transactions?from=2024-01-01'), ['GET transactions suffix']);
+  assert.deepStrictEqual(found(JAXRS, '/accounts/123-456/close'), ['POST close exact']);
+
+  // The "braces inside text" line doesn't cut getPortfolio short, and the helper isn't an endpoint.
+  const lines = sample(SPRING).split(/\r?\n/);
+  const get = analyse(sample(SPRING), '/enq/customer/portfolio/1').matches.find(m => m.methodName === 'getPortfolio');
+  assert.match(lines[get.endLine - 1], /^ {4}\}$/);
+  assert.match(lines.slice(get.startLine - 1, get.endLine).join('\n'), /^ {4}\/\*\*[\s\S]*braces inside text[\s\S]*return ResponseEntity\.ok/);
+  assert.ok(!analyse(sample(SPRING), '').endpoints.some(e => e.methodName === 'auditTrail'));
+
+  const list = toEntries(readCsv(sample('demo-list.csv'))).entries;
+  assert.deepStrictEqual(list.map(e => `${e.baseUrl} ${e.project}/${e.repo}`),
+    ['http://127.0.0.1:5199 DEMO/ecomm-services', 'http://127.0.0.1:5199 DEMO/enterprise-services']);
+});
+
+test('mock Bitbucket serves the demo files through server.py', { skip: !python && 'Python 3.7+ not available' }, async () => {
+  const start = (args, ready) => new Promise((resolve, reject) => {
+    const child = spawn(python, ['-u', ...args]);
+    let out = '';
+    const timer = setTimeout(() => reject(new Error(`did not start:\n${out}`)), 10000);
+    const onData = d => { out += d; if (out.includes(ready)) { clearTimeout(timer); resolve(child); } };
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
+  });
+  const mock = await start([path.join(__dirname, '..', 'tools', 'mock_bitbucket.py'), '--port', '5198'], 'Mock Bitbucket at');
+  const app = await start([path.join(__dirname, '..', 'server.py'), '--port', '5195', '--proxy', 'direct'], 'Proxy mode');
+  const get = (url, password = 'demo') => fetch('http://127.0.0.1:5195/api/get', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, connection: { baseUrl: 'http://127.0.0.1:5198', user: 'tester', password } }),
+  }).then(r => r.json());
+  try {
+    const base = { baseUrl: 'http://127.0.0.1:5198', project: 'DEMO', repo: 'ecomm-services', path: 'src/main/java/com/example/ecomm/enq', fileName: 'CustomerPortfolioEndpoint', extension: '.java' };
+    const loc = resolveLocation(buildFileUrl(base), { baseUrl: base.baseUrl });
+    const file = await get(loc.rawUrl);
+    assert.strictEqual(file.status, 200);
+    assert.strictEqual(file.body, sample(SPRING));
+    assert.strictEqual((await get(loginCheckUrl(base))).status, 200);
+    assert.strictEqual((await get(loginCheckUrl(base), 'wrong')).status, 401);
+    const missing = resolveLocation(buildFileUrl({ ...base, fileName: 'Missing' }), { baseUrl: base.baseUrl });
+    assert.strictEqual((await get(missing.rawUrl)).status, 404);
+    const escape = resolveLocation('http://127.0.0.1:5198/projects/DEMO/repos/ecomm-services/browse/x.java', { baseUrl: base.baseUrl });
+    assert.strictEqual((await get(escape.rawUrl.replace('/raw/x.java', '/raw/..%2F..%2Fserver.py'))).status, 404);
+  } finally {
+    app.kill();
+    mock.kill();
+  }
+});

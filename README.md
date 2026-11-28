@@ -16,6 +16,10 @@ With the Node.js server you can also preset the URL and defaults in a `.env` fil
 
 If your company uses its own TLS certificate authority, start Node with `NODE_EXTRA_CA_CERTS=path\to\corp-ca.pem`.
 
+## Try it without Bitbucket
+
+`samples/` holds two demo Endpoint files and `tools/mock_bitbucket.py`, a pretend Bitbucket that serves them (Python only). See [samples/README.md](samples/README.md) for the steps and the API values to try.
+
 ## Running on another computer
 
 StoryZLine has three interchangeable servers, all with the same page, behaviour and security rules. `start.cmd` uses the first one the laptop can run:
