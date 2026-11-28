@@ -161,7 +161,59 @@
     return null;
   }
 
-  const api = { resolveLocation, buildFileUrl, commandPathFrom, loginCheckUrl, responseProblem, isCloud, LocationError };
+  // A file name with "*" (e.g. payment*.xml) stands for every file in its folder that fits it.
+  function hasWildcard(name) {
+    return String(name || '').includes('*');
+  }
+
+  // "*" matches any run of characters; the rest of the name is literal. Case is not minded.
+  function globToRegExp(pattern) {
+    const literal = s => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('^' + String(pattern).split('*').map(literal).join('.*') + '$', 'i');
+  }
+
+  // The REST URL listing a folder's first page. where: { project, repo, ref, folder }.
+  function folderListUrl(where, cfg) {
+    checkBaseUrl(cfg);
+    const p = encodeURIComponent(where.project);
+    const r = encodeURIComponent(where.repo);
+    const folder = encodePath(String(where.folder || ''));
+    if (isCloud(cfg)) {
+      if (!where.ref) throw new LocationError('Bitbucket Cloud needs a branch.');
+      return `https://api.bitbucket.org/2.0/repositories/${p}/${r}/src/${encodeURIComponent(where.ref)}/${folder ? folder + '/' : ''}?pagelen=100`;
+    }
+    const at = where.ref ? `&at=${encodeURIComponent(where.ref)}` : '';
+    return `${cfg.baseUrl.replace(/\/+$/, '')}/rest/api/1.0/projects/${p}/repos/${r}/browse${folder ? '/' + folder : ''}?limit=1000${at}`;
+  }
+
+  // Reads one page of a folder listing: { files: [file names, no folders], next: next page's URL or null }.
+  function parseFolderListing(body, url, cloud) {
+    let data;
+    try {
+      data = JSON.parse(body);
+    } catch {
+      throw new LocationError('Bitbucket did not return a folder listing.');
+    }
+    if (cloud) {
+      const values = Array.isArray(data.values) ? data.values : [];
+      return { files: values.filter(v => v.type === 'commit_file').map(v => String(v.path).split('/').pop()), next: data.next || null };
+    }
+    const page = data.children;
+    if (!page || !Array.isArray(page.values)) throw new LocationError('That path is not a folder in Bitbucket.');
+    const files = page.values.filter(v => v.type === 'FILE').map(v => v.path && (v.path.name || v.path.toString)).filter(Boolean);
+    let next = null;
+    if (page.isLastPage === false && page.nextPageStart != null) {
+      const u = new URL(url);
+      u.searchParams.set('start', page.nextPageStart);
+      next = u.toString();
+    }
+    return { files, next };
+  }
+
+  const api = {
+    resolveLocation, buildFileUrl, commandPathFrom, loginCheckUrl, responseProblem, isCloud, LocationError,
+    hasWildcard, globToRegExp, folderListUrl, parseFolderListing,
+  };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else window.StoryZLocation = api;
 })();

@@ -105,6 +105,16 @@ pre { margin: 0; overflow: auto; max-height: 75vh; background: var(--code-bg); f
 .pane-msg { margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--border); }
 .pane-msg.error { color: var(--err); }
 .pane-code:empty { display: none; }
+/* Route pane with several Route files: a tab per file, with the selected row's count. */
+.pane-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 12px 0; border-bottom: 1px solid var(--border); background: var(--bg); }
+.pane-tab { display: inline-flex; align-items: center; gap: 6px; margin-bottom: -1px; padding: 6px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; background: none; color: var(--text); font: 600 12px ui-monospace, Consolas, monospace; }
+.pane-tab.empty { color: var(--muted); font-weight: 400; }
+.pane-tab:hover { background: var(--card); }
+.pane-tab[aria-selected="true"] { background: var(--card); border-color: var(--border); }
+.pane-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tab-count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font: 600 11px/18px system-ui, sans-serif; text-align: center; }
+.tab-count.zero { background: var(--border); color: var(--muted); }
+.tab-count.bad { background: var(--err); }
 .endpoint + .endpoint { margin-top: 4px; }
 .p-urls { display: grid; gap: 8px; }
 /* A row per file in a box with several files: File, Extension, joined URL. */

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Demo Camel route file for StoryZLine: not named payment*, so the pattern payment* leaves it out. -->
+<routes xmlns="http://camel.apache.org/schema/spring">
+
+    <route id="refunds.submit">
+        <from uri="direct:refunds_processSubmitApi"/>
+        <to uri="bean:refundController?method=processSubmitApi"/>
+    </route>
+</routes>

@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 SAMPLES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "samples")
 PROJECT = "DEMO"
 RAW = re.compile(r"^/rest/api/1\.0/projects/([^/]+)/repos/([^/]+)/raw/(.+)$")
+BROWSE = re.compile(r"^/rest/api/1\.0/projects/([^/]+)/repos/([^/]+)/browse(?:/(.*))?$")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -50,9 +51,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.logged_in():
             return self.send(401, "Authentication required")
-        path = urllib.parse.urlsplit(self.path).path
+        split = urllib.parse.urlsplit(self.path)
+        path = split.path
         if path == "/rest/api/1.0/projects":  # StoryZLine's login check
             return self.send(200, json.dumps({"values": [{"key": PROJECT, "name": "Demo"}]}), "application/json")
+        m = BROWSE.match(path)
+        if m:
+            return self.list_folder(m, urllib.parse.parse_qs(split.query))
         m = RAW.match(path)
         if not m:
             return self.send(404, "Not found")
@@ -62,6 +67,24 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, "File not found: %s/%s/%s" % (project, repo, file_path))
         with open(file, "rb") as f:  # byte for byte, as Bitbucket serves raw files
             self.send(200, f.read().decode("utf-8"))
+
+    def list_folder(self, m, query):
+        """A folder's entries, as Bitbucket Server's browse REST API pages them (?limit=&start=)."""
+        project, repo = urllib.parse.unquote(m.group(1)), urllib.parse.unquote(m.group(2))
+        folder = urllib.parse.unquote(m.group(3) or "").strip("/")
+        root = os.path.join(SAMPLES, repo)
+        d = os.path.normpath(os.path.join(root, folder))
+        if project != PROJECT or not (d == root or d.startswith(root + os.sep)) or not os.path.isdir(d):
+            return self.send(404, json.dumps({"errors": [{"message": "Folder not found: %s" % folder}]}), "application/json")
+        limit = max(1, min(1000, int((query.get("limit") or ["25"])[0])))
+        start = max(0, int((query.get("start") or ["0"])[0]))
+        names = sorted(os.listdir(d))
+        values = [{"path": {"name": n, "toString": n}, "type": "DIRECTORY" if os.path.isdir(os.path.join(d, n)) else "FILE"}
+                  for n in names[start:start + limit]]
+        page = {"size": len(values), "limit": limit, "start": start, "isLastPage": start + limit >= len(names), "values": values}
+        if not page["isLastPage"]:
+            page["nextPageStart"] = start + limit
+        self.send(200, json.dumps({"path": {"toString": folder}, "children": page}), "application/json")
 
 
 def main():

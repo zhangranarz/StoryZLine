@@ -484,6 +484,24 @@ test('mock Bitbucket serves the demo files through server.py', { skip: !python &
     assert.strictEqual((await get(missing.rawUrl)).status, 404);
     const escape = resolveLocation('http://127.0.0.1:5198/projects/DEMO/repos/ecomm-services/browse/x.java', { baseUrl: base.baseUrl });
     assert.strictEqual((await get(escape.rawUrl.replace('/raw/x.java', '/raw/..%2F..%2Fserver.py'))).status, 404);
+    const { folderListUrl, parseFolderListing, globToRegExp } = require('../public/shared/location');
+    const where = { project: 'DEMO', repo: 'banking-api', ref: '', folder: 'src/main/resources/routes' };
+    let url = folderListUrl(where, { baseUrl: base.baseUrl }).replace('limit=1000', 'limit=2');
+    const names = [];
+    let pages = 0;
+    while (url) {
+      const reply = await get(url);
+      assert.strictEqual(reply.status, 200);
+      const list = parseFolderListing(reply.body, url, false);
+      names.push(...list.files);
+      url = list.next;
+      pages++;
+    }
+    assert.ok(pages >= 2, 'paged');
+    assert.deepStrictEqual(names.filter(n => globToRegExp('payment*.xml').test(n)).sort(),
+      ['payment-routes.xml', 'payment-spl-1.1.xml', 'payment-v-1.1.xml']);
+    assert.ok(names.includes('refund-routes.xml'));
+    assert.strictEqual((await get(folderListUrl({ ...where, folder: 'no/such/folder' }, { baseUrl: base.baseUrl }))).status, 404);
   } finally {
     app.kill();
     mock.kill();
@@ -880,4 +898,57 @@ test('the demo Command files sit where the rule points', () => {
     assert.ok(fs.existsSync(file), file);
     assert.match(fs.readFileSync(file, 'utf8'), new RegExp('public class ' + name + '\\b'));
   }
+});
+
+// ---- Route File patterns: payment* ----
+
+test('a Route File with "*" lists its folder (Server and Cloud) and keeps the names that fit', () => {
+  const L = require('../public/shared/location');
+  assert.ok(L.hasWildcard('payment*.xml'));
+  assert.ok(!L.hasWildcard('payment-routes.xml'));
+  const rx = L.globToRegExp('payment*.xml');
+  assert.deepStrictEqual(['payment.xml', 'payment-v-1.1.xml', 'payment-spl-1.1.xml', 'Payment-X.XML', 'refund-routes.xml', 'payment.xml.bak', 'xpayment.xml'].filter(n => rx.test(n)),
+    ['payment.xml', 'payment-v-1.1.xml', 'payment-spl-1.1.xml', 'Payment-X.XML']);
+  assert.ok(L.globToRegExp('a.b(1)*').test('a.b(1)-z'));  // regex characters are literal
+  assert.ok(!L.globToRegExp('a.b*').test('axb'));
+
+  const server = { baseUrl: 'https://git.bank.com/bitbucket/' };
+  const where = { project: 'ECOM', repo: 'pay api', ref: '', folder: 'src/main/resources/routes' };
+  assert.strictEqual(L.folderListUrl(where, server), 'https://git.bank.com/bitbucket/rest/api/1.0/projects/ECOM/repos/pay%20api/browse/src/main/resources/routes?limit=1000');
+  assert.strictEqual(L.folderListUrl({ ...where, ref: 'refs/heads/develop' }, server).split('?')[1], 'limit=1000&at=refs%2Fheads%2Fdevelop');
+  assert.strictEqual(L.folderListUrl({ ...where, folder: '' }, server), 'https://git.bank.com/bitbucket/rest/api/1.0/projects/ECOM/repos/pay%20api/browse?limit=1000');
+  const cloud = { baseUrl: 'https://bitbucket.org' };
+  assert.strictEqual(L.folderListUrl({ ...where, ref: 'main' }, cloud), 'https://api.bitbucket.org/2.0/repositories/ECOM/pay%20api/src/main/src/main/resources/routes/?pagelen=100');
+  assert.throws(() => L.folderListUrl(where, cloud), /branch/);
+
+  // Server pages: files only, and the next page's URL from nextPageStart.
+  const first = 'https://git.bank.com/rest/api/1.0/projects/E/repos/r/browse/x?limit=2';
+  const page = L.parseFolderListing(JSON.stringify({ children: { isLastPage: false, nextPageStart: 2, values: [
+    { path: { name: 'a.xml', toString: 'a.xml' }, type: 'FILE' }, { path: { name: 'old', toString: 'old' }, type: 'DIRECTORY' }] } }), first, false);
+  assert.deepStrictEqual(page, { files: ['a.xml'], next: first + '&start=2' });
+  assert.deepStrictEqual(L.parseFolderListing(JSON.stringify({ children: { isLastPage: true, values: [] } }), first, false), { files: [], next: null });
+  // A file's path answers with its lines, not children.
+  assert.throws(() => L.parseFolderListing(JSON.stringify({ lines: [] }), first, false), /not a folder/);
+  assert.throws(() => L.parseFolderListing('<html>', first, false), /folder listing/);
+  // Cloud: full paths, commit_file only, and "next".
+  assert.deepStrictEqual(L.parseFolderListing(JSON.stringify({ next: 'https://api.bitbucket.org/next', values: [
+    { type: 'commit_file', path: 'src/routes/payment.xml' }, { type: 'commit_directory', path: 'src/routes/old' }] }), '', true),
+    { files: ['payment.xml'], next: 'https://api.bitbucket.org/next' });
+});
+
+test('routes for one Endpoint method are found in each payment* Route file', () => {
+  const dir = 'banking-api/src/main/resources/routes/';
+  const ids = (file, name) => (findRouteSections(sample(dir + file), [name])[name] || []).map(x => x.id);
+  const files = ['payment-routes.xml', 'payment-spl-1.1.xml', 'payment-v-1.1.xml'];
+  assert.deepStrictEqual(files.map(f => ids(f, 'processSubmitApi')), [['payments.submit'], ['payments.spl.submit'], ['payments.v1.submit']]);
+  assert.deepStrictEqual(files.map(f => ids(f, 'processCancelApi')), [['payments.cancel'], ['payments.spl.cancel'], []]);
+
+  // In the diagram, routes from different files are different boxes, each knowing its file.
+  const flows = traceFlows({ endpoint: sample(BANK + 'api/PaymentEndpoint.java'), apiPath: '/spl-banking/payments/submit' });
+  const r = flows.rows[0];
+  r.routes = files.flatMap((f, i) => (findRouteSections(sample(dir + f), ['processSubmitApi']).processSubmitApi || []).map(x => ({ ...x, file: i })));
+  const graph = Diagram.flowGraph({ rows: flows.rows, apiPath: '/spl-banking/payments/submit' });
+  const boxes = graph.nodes.filter(n => n.layer === 'route');
+  assert.deepStrictEqual(boxes.map(n => [n.label, n.ref.file]), [['payments.submit', 0], ['payments.spl.submit', 1], ['payments.v1.submit', 2]]);
+  assert.match(Diagram.toSvg(graph, {}), /data-pane="route" data-line="5" data-file="2"/);
 });

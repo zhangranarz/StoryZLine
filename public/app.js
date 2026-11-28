@@ -474,8 +474,42 @@ $('form').addEventListener('submit', async e => {
       return { ...c, loc, error: err.message };
     }
   };
+  // A Route File with "*" (e.g. payment*.xml): list its folder and pull every file that fits.
+  const MAX_MATCHES = 50;
+  const expand = async (c, cfg) => {
+    let loc;
+    try {
+      loc = Loc.resolveLocation(c.url, cfg);
+    } catch (err) {
+      return [{ ...c, error: err.message }];
+    }
+    const pattern = loc.path.split('/').pop();
+    if (c.key !== 'route' || !Loc.hasWildcard(pattern)) return [await pull(c, cfg)];
+    const folder = loc.path.split('/').slice(0, -1).join('/');
+    const where = `${loc.project}/${loc.repo}/${folder}`;
+    const names = [];
+    try {
+      let url = Loc.folderListUrl({ ...loc, folder }, cfg);
+      for (let page = 0; url && page < 50; page++) {
+        const reply = await post('/api/get', { url, connection: conn });
+        const problem = Loc.responseProblem(reply, `Folder not found: ${where}${loc.ref ? ` at ${loc.ref}` : ''}.`);
+        if (problem) return [{ ...c, loc, error: problem, status: reply.status }];
+        const list = Loc.parseFolderListing(reply.body, url, Loc.isCloud(cfg));
+        names.push(...list.files);
+        url = list.next;
+      }
+    } catch (err) {
+      return [{ ...c, loc, error: err.message }];
+    }
+    const rx = Loc.globToRegExp(pattern);
+    const hits = names.filter(n => rx.test(n)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    if (!hits.length) return [{ ...c, loc, error: `No file in ${where} matches ${pattern}.` }];
+    if (hits.length > MAX_MATCHES) return [{ ...c, loc, error: `${hits.length} files in ${where} match ${pattern}; make the pattern narrower (at most ${MAX_MATCHES}).` }];
+    const one = { ...cfg, project: loc.project, repo: loc.repo, branch: loc.ref };
+    return Promise.all(hits.map(n => pull({ ...c, url: folder ? `${folder}/${n}` : n, pattern }, one)));
+  };
   try {
-    const results = await Promise.all(chosen.map(c => pull(c, c.part.cfg(conn))));
+    const results = (await Promise.all(chosen.map(c => expand(c, c.part.cfg(conn))))).flat();
     const apiPath = $('api').value.trim();
 
     // Second round: the Command classes named by the Controller methods' @CommandHandler, in the
@@ -525,7 +559,10 @@ $('form').addEventListener('submit', async e => {
 });
 
 function render(results, apiPath, handlers = {}) {
-  const files = Object.fromEntries(results.map(r => [r.key, r]));
+  // Several Route files when the Route File has "*": each is searched, and shown in its own tab.
+  const routeFiles = results.filter(r => r.key === 'route');
+  const files = Object.fromEntries(results.filter(r => r.key !== 'route').map(r => [r.key, r]));
+  if (routeFiles.length) files.route = routeFiles.find(f => f.content != null) || routeFiles[0];
   const src = k => (files[k] && files[k].content != null ? files[k].content : null);
   const flows = Java.traceFlows({
     endpoint: src('endpoint'), api: src('api'), controller: src('controller'), command: src('command'), apiPath,
@@ -550,23 +587,34 @@ function render(results, apiPath, handlers = {}) {
     });
   }
   // Each row's route: the <route> whose <from uri="…_name"/> names its Endpoint method.
+  // In every Route file; each route found remembers its file (its index in routeFiles).
+  const multi = routeFiles.length > 1;
+  const routeOk = routeFiles.map((f, i) => ({ f, i })).filter(x => x.f.content != null);
   let byName = false;
-  if (src('route') != null) {
-    const sections = Java.findRouteSections(src('route'), flows.rows.map(r => r.endpoint.name));
-    for (const r of flows.rows) r.routes = sections[r.endpoint.name] || [];
+  if (routeOk.length) {
+    for (const r of flows.rows) r.routes = [];
+    for (const { f, i } of routeOk) {
+      const sections = Java.findRouteSections(f.content, flows.rows.map(r => r.endpoint.name));
+      for (const r of flows.rows) r.routes.push(...(sections[r.endpoint.name] || []).map(x => ({ ...x, file: multi ? i : undefined })));
+    }
     byName = flows.rows.some(r => r.routes.length);
   }
-  // Without any such route: the lines with a path matching the API (the same for every row).
-  const route = src('route') != null && !byName ? Java.findRouteLines(src('route'), apiPath, [flows.classes.endpoint]) : null;
+  // Without any such route: the lines with a path matching the API (the same for every row), per file.
+  const routeHits = {};
+  if (routeOk.length && !byName) {
+    for (const { f, i } of routeOk) routeHits[i] = Java.findRouteLines(f.content, apiPath, [flows.classes.endpoint]);
+  }
   // For the process diagram, each matching route line comes with the lines after it (up to the
   // next match), which may name the Endpoint method it routes to.
-  let routeLines = [];
-  if (route) {
-    const lines = src('route').split(/\r?\n/);
-    routeLines = route.lines.map((n, k) => ({ n, text: lines.slice(n - 1, Math.min(n + 3, route.lines[k + 1] ? route.lines[k + 1] - 1 : n + 3)).join('\n') }));
+  const routeLines = [];
+  for (const { f, i } of routeOk.filter(x => routeHits[x.i])) {
+    const lines = f.content.split(/\r?\n/);
+    const hit = routeHits[i].lines;
+    routeLines.push(...hit.map((n, k) => ({ n, file: multi ? i : undefined, text: lines.slice(n - 1, Math.min(n + 3, hit[k + 1] ? hit[k + 1] - 1 : n + 3)).join('\n') })));
   }
+  const route = routeOk.length && !byName ? routeHits[routeOk[0].i] : null;  // for the notes
   const graph = Diagram.flowGraph({ rows: flows.rows, apiPath, routeLines });
-  view = { files, flows, route, byName, graph, apiPath, selected: 0, panes: {}, whole: {} };
+  view = { files, routeFiles, routeHits, routeTab: 0, flows, byName, graph, apiPath, selected: 0, panes: {}, whole: {} };
   $('result').hidden = false;
 
   const none = '<span class="none">—</span>';
@@ -584,13 +632,16 @@ function render(results, apiPath, handlers = {}) {
     }
     return src('command') != null ? names(r.command) : notPulled;
   };
+  // A route id, with its file when there are several Route files.
+  const fileName = f => (f.loc ? f.loc.path.split('/').pop() : f.url);
+  const routeCell = x => `<code>${esc(x.id || `line ${x.start}`)}</code>${x.file != null ? `<br><small>${esc(fileName(routeFiles[x.file]))}</small>` : ''}`;
   $('flow').querySelector('tbody').innerHTML = flows.rows.map((r, i) => `
     <tr data-row="${i}" tabindex="0">
       <td>${esc(r.methods.join(', ')) || none}</td>
       <td>${r.paths.map(p => `<code>${esc(p)}</code>`).join('<br>') || none}</td>
       <td>${match(r)}</td>
       <td>${r.endpoint ? `${esc(r.endpoint.name)}()` : none}</td>
-      <td>${src('route') != null ? (r.routes && r.routes.length ? r.routes.map(x => `<code>${esc(x.id || `line ${x.start}`)}</code>`).join('<br>') : none) : notPulled}</td>
+      <td>${src('route') != null ? (r.routes && r.routes.length ? r.routes.map(routeCell).join('<br>') : none) : notPulled}</td>
       <td>${src('api') != null ? names(r.api) + by(r, 'api') : notPulled}</td>
       <td>${src('controller') != null ? names(r.controller) + by(r, 'controller') : notPulled}</td>
       <td>${commandCell(r)}</td>
@@ -610,13 +661,14 @@ function render(results, apiPath, handlers = {}) {
   if (flows.classes.command && flows.rows.length && !flows.rows.some(r => r.command.length || r.commandAuto)) {
     notes.push(`No calls to ${flows.classes.command} were found in the ${src('controller') != null ? 'Controller' : 'Endpoint'} methods.`);
   }
+  const inFiles = multi ? ` in ${routeOk.length} Route files matching ${routeFiles[0].pattern}` : '';
   if (byName) {
     const missing = flows.rows.filter(r => !r.routes.length).map(r => `_${r.endpoint.name}`);
-    notes.push(`Route: found by the Endpoint method name in <from uri="…_name"/>.${missing.length ? ` No route for ${missing.join(', ')}.` : ''}`);
+    notes.push(`Route: found by the Endpoint method name in <from uri="…_name"/>${inFiles}.${missing.length ? ` No route for ${missing.join(', ')}.` : ''}`);
   } else if (route) {
-    const n = route.lines.length;
+    const n = Object.values(routeHits).reduce((sum, h) => sum + h.lines.length, 0);
     notes.push(!n ? `Route: no <from uri> ends in ${flows.rows.map(r => `_${r.endpoint.name}`).join(' or ') || 'an Endpoint method name'}, and no line matches this API.`
-      : `Route: ${n} line${n === 1 ? '' : 's'} ${route.how === 'path' ? 'with a path matching the API' : route.how === 'text' ? 'mentioning the API path' : `mentioning ${flows.classes.endpoint}`}.`);
+      : `Route: ${n} line${n === 1 ? '' : 's'} ${route.how === 'path' ? 'with a path matching the API' : route.how === 'text' ? 'mentioning the API path' : `mentioning ${flows.classes.endpoint}`}${inFiles}.`);
   }
   $('flow-note').textContent = notes.join(' ');
   $('flow-note').hidden = !notes.length;
@@ -636,6 +688,12 @@ function select(i) {
   if (!view) return;
   view.selected = i;
   view.whole = {};
+  // The Route tab: the first file with a route for this row (else the first file with matching lines).
+  if (view.routeFiles.length > 1) {
+    const counts = view.routeFiles.map((f, k) => routeCount(k));
+    const first = counts.findIndex(n => n > 0);
+    view.routeTab = first >= 0 ? first : Math.max(0, view.routeFiles.findIndex(f => f.content != null));
+  }
   for (const tr of $('flow').querySelectorAll('tbody tr[data-row]')) tr.classList.toggle('sel', Number(tr.dataset.row) === i);
   for (const key of Object.keys(view.panes)) drawPane(key);
   drawDiagram();
@@ -650,10 +708,12 @@ function drawDiagram() {
     $('diagram-state').textContent = '';
     return;
   }
-  const routeFile = files.route && files.route.loc ? files.route.loc.path.split('/').pop() : '';
+  const routeFile = view.routeFiles.length > 1 ? `${view.routeFiles[0].pattern} (${view.routeFiles.length} files)`
+    : files.route && files.route.loc ? files.route.loc.path.split('/').pop() : '';
   const lanes = {
     route: routeFile, endpoint: flows.classes.endpoint, api: flows.classes.api, controller: flows.classes.controller,
-    command: flows.classes.command,
+    // The Command classes named by @CommandHandler, else the Command box's class.
+    command: [...new Set(flows.rows.filter(r => r.commandAuto).map(r => r.commandAuto.handler.command))].join(', ') || flows.classes.command,
   };
   $('diagram').innerHTML = Diagram.toSvg(graph, { lanes, selected: flows.rows.length > 1 ? view.selected : null });
   const row = flows.rows[view.selected];
@@ -668,6 +728,12 @@ function openNode(node) {
   if (!rows.includes(view.selected)) select(rows[0]);
   const pane = view.panes[node.dataset.pane];
   if (!pane) return;
+  // A route box from one of several Route files: show that file's tab.
+  if (node.dataset.file != null && Number(node.dataset.file) !== view.routeTab) {
+    view.routeTab = Number(node.dataset.file);
+    view.whole.route = false;
+    drawPane('route');
+  }
   pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const line = pane.querySelector(`.ln[data-n="${node.dataset.line}"]`);
   if (line) {
@@ -700,14 +766,15 @@ function mergeRanges(list) {
 // The line ranges and highlighted lines of a row in one pane.
 function rowParts(key, row) {
   if (key === 'route') {
-    // The row's own <route> section(s), marking the <route id> and <from uri> lines.
+    // The row's own <route> section(s) in the file of the Route tab, marking the <route id> and <from uri> lines.
     if (view.byName) {
-      const routes = row && row.routes ? row.routes : [];
+      const routes = routesInTab(row, view.routeTab);
       return { ranges: mergeRanges(routes.map(x => [x.start, x.end])), marks: routes.flatMap(x => [x.start, x.fromLine]) };
     }
     // Else the lines with a path matching the API, with two lines of context; the same for every row.
-    const marks = view.route ? view.route.lines : [];
-    const last = view.files.route.content.split(/\r?\n/).length;
+    const hits = view.routeHits[view.routeTab];
+    const marks = hits ? hits.lines : [];
+    const last = paneFile('route').content.split(/\r?\n/).length;
     return { ranges: mergeRanges(marks.map(n => [Math.max(1, n - 2), Math.min(last, n + 2)])), marks };
   }
   if (!row) return { ranges: [], marks: [] };
@@ -732,7 +799,39 @@ function rowParts(key, row) {
 function paneFile(key) {
   const row = view.flows.rows[view.selected];
   if (key === 'command' && row && row.commandAuto) return row.commandAuto;
+  if (key === 'route' && view.routeFiles.length > 1) return view.routeFiles[view.routeTab];
   return view.files[key];
+}
+
+// A row's routes in Route file number `tab` (all of them with a single Route file).
+function routesInTab(row, tab) {
+  const routes = row && row.routes ? row.routes : [];
+  return view.routeFiles.length > 1 ? routes.filter(x => x.file === tab) : routes;
+}
+
+// What the selected row found in Route file number `tab`: its routes, else its matching lines.
+function routeCount(tab) {
+  if (view.byName) return routesInTab(view.flows.rows[view.selected], tab).length;
+  return view.routeHits[tab] ? view.routeHits[tab].lines.length : 0;
+}
+
+// The Route pane's tabs, one per Route file, with what the selected row found in each.
+function drawRouteTabs(pane) {
+  let bar = pane.querySelector('.pane-tabs');
+  if (view.routeFiles.length < 2) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.className = 'pane-tabs';
+    bar.setAttribute('role', 'tablist');
+    bar.setAttribute('aria-label', 'Route files');
+    pane.querySelector('.pane-head').after(bar);
+  }
+  bar.innerHTML = view.routeFiles.map((f, k) => {
+    const n = f.content != null ? routeCount(k) : 0;
+    const badge = f.error ? '<span class="tab-count bad">!</span>' : `<span class="tab-count${n ? '' : ' zero'}">${n}</span>`;
+    return `<button type="button" class="pane-tab${n ? '' : ' empty'}" role="tab" data-file="${k}" aria-selected="${k === view.routeTab}"` +
+      ` title="${esc(f.loc ? f.loc.path : f.url)}">${esc(f.loc ? f.loc.path.split('/').pop() : f.url)} ${badge}</button>`;
+  }).join('');
 }
 
 function drawPane(key) {
@@ -753,6 +852,7 @@ function drawPane(key) {
     q('pane-copy').hidden = true;
     return;
   }
+  if (key === 'route') drawRouteTabs(pane);
   q('pane-label').textContent = f.label;
   q('pane-file').textContent = f.loc ? f.loc.path.split('/').pop() : f.url;
   q('pane-where').textContent = f.loc ? `${f.loc.project}/${f.loc.repo} · ${f.loc.path}` : '';
@@ -778,8 +878,8 @@ function drawPane(key) {
     ? `From @CommandHandler on ${row.commandAuto.handler.method}() in the Controller${row.commandAuto.handler.validator ? ` (validator ${row.commandAuto.handler.validator})` : ''}: the whole class.`
     : ranges.length ? ''
     : key === 'route' ? (view.byName && row
-      ? `No <route> has a <from uri> ending in _${row.endpoint.name}: showing the whole file.`
-      : 'No line in the Route file matches this API: showing the whole file.')
+      ? `No <route>${view.routeFiles.length > 1 ? ' in this file' : ''} has a <from uri> ending in _${row.endpoint.name}: showing the whole file.`
+      : `No line in ${view.routeFiles.length > 1 ? 'this' : 'the'} Route file matches this API: showing the whole file.`)
     : row ? `No ${f.label} method for this row: showing the whole file.` : '';
   msg.hidden = !msg.textContent;
 
@@ -827,7 +927,12 @@ $('panes').addEventListener('click', async e => {
   const pane = e.target.closest('.pane');
   if (!pane || !view) return;
   const key = pane.dataset.pane;
-  if (e.target.closest('.pane-toggle')) {
+  const tab = e.target.closest('.pane-tab');
+  if (tab) {
+    view.routeTab = Number(tab.dataset.file);
+    view.whole.route = false;
+    drawPane('route');
+  } else if (e.target.closest('.pane-toggle')) {
     const { ranges } = rowParts(key, view.flows.rows[view.selected]);
     view.whole[key] = !(view.whole[key] || !ranges.length);
     drawPane(key);

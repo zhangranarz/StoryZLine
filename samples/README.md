@@ -52,3 +52,7 @@ Here the Command is not typed in: it is found from the Controller. Repository `b
 | Command | *(leave empty)* | |
 
 API `/spl-banking/payments/submit`: Endpoint `processSubmitApi()` → route `payments.submit` → API and Controller `processSubmitApi()` *(same name)*. That Controller method has `@CommandHandler(command = "SubmitApiCommand", validator = "SubmitApiValidator")`, so `src/main/java/com/processing/impl/SubmitApiCommand.java` (the Controller's folder without `api`, plus `processing/impl`) is pulled, and the Command box is filled in with it. Try `/spl-banking/payments/cancel/77` too: its `@CommandHandler` is written over three lines and leads to `CancelApiCommand`.
+
+### Several Route files: `payment*`
+
+In the same setup, put `payment*` as the Route File (Extension `.xml`). The routes folder holds `payment-routes.xml`, `payment-spl-1.1.xml`, `payment-v-1.1.xml` and `refund-routes.xml`; the first three are pulled, `refund-routes.xml` is left out. With API `/spl-banking/payments/submit` each file has a route for `processSubmitApi` (`payments.submit`, `payments.spl.submit`, `payments.v1.submit`), so the Route pane shows three tabs with `1` each. With `/spl-banking/payments/cancel/77`, `payment-v-1.1.xml` has no cancel route: its tab shows `0`.

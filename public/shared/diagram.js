@@ -61,16 +61,19 @@
       // route lines that fit it.
       addEdge('start', ep, 'route', 'mapped to the Endpoint', i);
       const routeIds = [];
+      // With several Route files, x.file / l.file is the file's number (kept in the box, for its tab).
+      const inFile = (file, line) => (file != null ? { pane: 'route', line, file } : { pane: 'route', line });
+      const key = (file, line) => (file != null ? `route:${file}:${line}` : `route:${line}`);
       for (const x of r.routes || []) {
-        const id = `route:${x.start}`;
-        addNode(id, 'route', x.id || `line ${x.start}`, x.uri, i, { pane: 'route', line: x.start });
+        const id = key(x.file, x.start);
+        addNode(id, 'route', x.id || `line ${x.start}`, x.uri, i, inFile(x.file, x.start));
         addEdge(ep, id, 'route', `route from ${x.uri}`, i);
         routeIds.push(id);
       }
       if (!routeIds.length) {
         for (const l of routeLines.filter(l => routeFits(l.text, r, rows))) {
-          const id = `route:${l.n}`;
-          addNode(id, 'route', routeLabel(l.text), `line ${l.n}`, i, { pane: 'route', line: l.n });
+          const id = key(l.file, l.n);
+          addNode(id, 'route', routeLabel(l.text), `line ${l.n}`, i, inFile(l.file, l.n));
           addEdge(ep, id, 'route', 'route for the Endpoint', i);
           routeIds.push(id);
         }
@@ -207,7 +210,7 @@
     for (const n of graph.nodes) {
       const p = pos.get(n.id);
       const tip = `${LAYERS.find(l => l[0] === n.layer)[1]}: ${n.label}${n.sub ? ` · ${n.sub}` : ''}`;
-      const attrs = n.ref ? ` data-pane="${n.ref.pane}" data-line="${n.ref.line}" tabindex="0" role="button"` : '';
+      const attrs = n.ref ? ` data-pane="${n.ref.pane}" data-line="${n.ref.line}"${n.ref.file != null ? ` data-file="${n.ref.file}"` : ''} tabindex="0" role="button"` : '';
       parts.push(`<g class="dg-node dg-${n.layer} ${on(n) ? 'dg-on' : 'dg-off'}" data-rows="${n.rows.join(',')}"${attrs} aria-label="${esc(tip)}">` +
         `<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" rx="8"/>` +
         `<text x="${p.x + p.w / 2}" y="${p.y + (n.sub ? 19 : 28)}" class="dg-label">${esc(n.label.length > MAX_LABEL ? n.label.slice(0, MAX_LABEL - 1) + '…' : n.label)}</text>` +
