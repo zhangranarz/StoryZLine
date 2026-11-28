@@ -60,7 +60,7 @@ Instead of typing locations, keep them in an Excel sheet. The first sheet needs 
    | Project key, Repository | dropdowns from the sheet, Repository narrowed by Project key; **Other…** to type a value (plain text boxes without a sheet) |
    | Path | text; the sheet's *Endpoint Java file location* values are suggested, and the first one is filled in while Path is empty |
    | File name | text |
-   | File extension | text with suggestions (`.java`, `.xml`, `.properties`, `.yml`, …); added unless the file name already ends with it |
+   | File extension | dropdown: `.java` (default), `.xml`, `.properties`, `.yml`, `.yaml`, `.json`, `.sql`, `.wsdl`, `.xsd`, `.kt`, `.groovy`, `.gradle`, `.jsp`, `.txt`, *(no extension)*, or **Other…** to type one; added unless the file name already ends with it |
 
 3. **Endpoint** shows the joined Bitbucket file URL and updates as you change the parts. You can edit it before pulling:
    `Bitbucket URL /projects/ Project key /repos/ Repository /browse/ Path / File name File extension`

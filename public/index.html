@@ -58,23 +58,8 @@
             </label>
             <label>
               <span>File extension</span>
-              <input id="pick-ext" list="ext-list" value=".java" autocomplete="off">
-              <datalist id="ext-list">
-                <option value=".java"></option>
-                <option value=".xml"></option>
-                <option value=".properties"></option>
-                <option value=".yml"></option>
-                <option value=".yaml"></option>
-                <option value=".json"></option>
-                <option value=".sql"></option>
-                <option value=".wsdl"></option>
-                <option value=".xsd"></option>
-                <option value=".kt"></option>
-                <option value=".groovy"></option>
-                <option value=".gradle"></option>
-                <option value=".jsp"></option>
-                <option value=".txt"></option>
-              </datalist>
+              <select id="pick-ext-select"></select>
+              <input id="pick-ext" value=".java" placeholder=".ext" autocomplete="off" hidden>
             </label>
           </div>
           <p id="build-msg" class="note" hidden></p>

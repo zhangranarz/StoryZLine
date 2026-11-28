@@ -260,6 +260,8 @@ const XL = window.StoryZExcel;
 const LEVELS = ['project', 'repo'];                          // narrowed in this order
 const INPUT = { project: 'conn-project', repo: 'conn-repo' };
 const OTHER = '__other__';
+const EXTENSIONS = ['.java', '.xml', '.properties', '.yml', '.yaml', '.json', '.sql', '.wsdl', '.xsd',
+  '.kt', '.groovy', '.gradle', '.jsp', '.txt'];
 let pickEntries = [];
 let pickColumns = [];
 
@@ -349,6 +351,35 @@ function refreshPicks() {
   updateState();
   updateEndpoint();
 }
+
+// File extension: a dropdown of common extensions, "(no extension)", and "Other…" to type one.
+// The text box #pick-ext always holds the value used.
+function showExtension() {
+  const sel = $('pick-ext-select');
+  if (!sel.options.length) {
+    sel.innerHTML = EXTENSIONS.map(x => `<option value="${x}">${x}</option>`).join('') +
+      `<option value="">(no extension)</option><option value="${OTHER}">Other…</option>`;
+  }
+  let v = $('pick-ext').value.trim().toLowerCase();
+  if (v && !v.startsWith('.')) v = '.' + v;
+  const known = v === '' || EXTENSIONS.includes(v);
+  sel.value = known && !sel.dataset.other ? v : OTHER;
+  $('pick-ext').hidden = sel.value !== OTHER;
+}
+
+$('pick-ext-select').addEventListener('change', e => {
+  if (e.target.value === OTHER) {
+    e.target.dataset.other = '1';
+    $('pick-ext').value = '';
+    $('pick-ext').hidden = false;
+    $('pick-ext').focus();
+  } else {
+    delete e.target.dataset.other;
+    $('pick-ext').value = e.target.value;
+    $('pick-ext').hidden = true;
+  }
+  updateEndpoint();
+});
 
 function endpointParts() {
   return {
@@ -477,6 +508,7 @@ const savedParts = store.json('endpointParts') || {};
 $('pick-path').value = savedParts.path || '';
 $('pick-name').value = savedParts.fileName || '';
 if (typeof savedParts.extension === 'string') $('pick-ext').value = savedParts.extension;
+showExtension();
 if (!$('pick-path').value) $('pick-path').dataset.auto = '1';
 
 const savedList = store.json('pickList');
