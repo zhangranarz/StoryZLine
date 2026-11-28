@@ -15,7 +15,7 @@ Fill in the four boxes (Project `DEMO`, Repository `ecomm-services`):
 | Box | Path | File(s) |
 |---|---|---|
 | Endpoint | `src/main/java/com/example/ecomm/enq` | File `CustomerPortfolioEndpoint` |
-| Route | `src/main/resources/routes` | Endpoint Route `portfolio-routes` (Extension `.xml`); Reference Route File empty |
+| Route | `src/main/resources/routes` | Endpoint File `portfolio-routes` (Extension `.xml`); Reference File empty |
 | APIController | `src/main/java/com/example/ecomm/enq/controller` | API File `CustomerPortfolioApi`, Controller File `CustomerPortfolioController` |
 | Command | `src/main/java/com/example/ecomm/enq/command` | File `CustomerPortfolioCommand` |
 
@@ -47,7 +47,7 @@ Here the Command is not typed in: it is found from the Controller. Repository `b
 | Box | Path | File(s) |
 |---|---|---|
 | Endpoint | `src/main/java/com/api` | File `PaymentEndpoint` |
-| Route | `src/main/resources/routes` | Endpoint Route `payment-routes` (Extension `.xml`); Reference Route File empty |
+| Route | `src/main/resources/routes` | Endpoint File `payment-routes` (Extension `.xml`); Reference File empty |
 | APIController | `src/main/java/com/api` | API File `PaymentApi`, Controller File `PaymentController` |
 | Command | *(leave empty)* | |
 
@@ -55,6 +55,6 @@ API `/spl-banking/payments/submit`: Endpoint `processSubmitApi()` → route `pay
 
 ### Several Route files: `payment*`
 
-In the same setup, put `payment*` as the Endpoint Route (Extension `.xml`). The routes folder holds `payment-routes.xml`, `payment-spl-1.1.xml`, `payment-v-1.1.xml` and `refund-routes.xml`; the first three are pulled, `refund-routes.xml` is left out. With API `/spl-banking/payments/submit` each file has a route for `processSubmitApi` (`payments.submit`, `payments.spl.submit`, `payments.v1.submit`), so the Route pane shows three tabs with `1` each. With `/spl-banking/payments/cancel/77`, `payment-v-1.1.xml` has no cancel route: its tab shows `0`, and is hidden while **Hide files without a route** is ticked ("1 hidden").
+In the same setup, put `payment*` as the Endpoint File (Extension `.xml`). The routes folder holds `payment-routes.xml`, `payment-spl-1.1.xml`, `payment-v-1.1.xml` and `refund-routes.xml`; the first three are pulled, `refund-routes.xml` is left out. With API `/spl-banking/payments/submit` each file has a route for `processSubmitApi` (`payments.submit`, `payments.spl.submit`, `payments.v1.submit`), so the Route pane shows three tabs with `1` each. With `/spl-banking/payments/cancel/77`, `payment-v-1.1.xml` has no cancel route: its tab shows `0`, and is hidden while **Hide files without a route** is ticked ("1 hidden").
 
-The **Route flow** card for the submit row then shows how `payments.submit` runs: `log`, a call to `direct:payments.validate` (followed: a `doTry` with a `doCatch` for `IllegalArgumentException` that sets HTTP 400 and stops), then a `choice`: when the `channel` header is `SPL` it goes to `direct:payments.spl_processSubmitApi` (followed into `payment-spl-1.1.xml`, which calls `direct:spl.audit` there), otherwise to `bean:paymentController?method=processSubmitApi` (linked to the Controller method). The audit route's `seda:audit.write` has no route in the payment files, and is marked *not found*. Now put `base-routes` as the **Reference Route File**, with its own Path `src/main/resources/routes/base`: `seda:audit.write` is found in `base-routes.xml` by its `<from uri>`, and the `direct:base.mask` it calls is found by route id (the `base.mask` route starts with another uri); the Reference check shows 5 of 5 references found.
+The **Route flow** card for the submit row then shows how `payments.submit` runs: `log`, a call to `direct:payments.validate` (followed: a `doTry` with a `doCatch` for `IllegalArgumentException` that sets HTTP 400 and stops), then a `choice`: when the `channel` header is `SPL` it goes to `direct:payments.spl_processSubmitApi` (followed into `payment-spl-1.1.xml`, which calls `direct:spl.audit` there), otherwise to `bean:paymentController?method=processSubmitApi` (linked to the Controller method). The audit route's `seda:audit.write` has no route in the payment files, and is marked *not found*. Now put `base-routes` as the **Reference File**, with its own Path `src/main/resources/routes/base`: `seda:audit.write` is found in `base-routes.xml` by its `<from uri>`, and the `direct:base.mask` it calls is found by route id (the `base.mask` route starts with another uri); the Reference check shows 5 of 5 references found.

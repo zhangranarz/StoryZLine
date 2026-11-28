@@ -348,12 +348,12 @@ $('api').addEventListener('input', () => store.set('api', $('api').value.trim())
 
 const parts = [
   new Part('endpoint', 'Endpoint', [{ key: 'endpoint', title: 'File', label: 'Endpoint', placeholder: 'CustomerPortfolioEndpoint' }]),
-  // Endpoint Route: searched for the Endpoint method's route. Reference Route File: the base routes the
+  // Endpoint File: searched for the Endpoint method's route. Reference File: the base routes the
   // routes call (by <from uri> or route id), used to follow and check those references.
   // Each has its own Path: base routes often live in another folder.
   new Part('route', 'Route', [
-    { key: 'route', title: 'Endpoint Route', label: 'Route', placeholder: 'portfolio-routes', extension: '.xml', pathPlaceholder: 'src/main/resources/routes' },
-    { key: 'routeRef', title: 'Reference Route File', label: 'Reference Route', placeholder: 'base-routes', extension: '.xml', pathPlaceholder: 'src/main/resources/routes/base' },
+    { key: 'route', title: 'Endpoint File', label: 'Route', placeholder: 'portfolio-routes', extension: '.xml', pathPlaceholder: 'src/main/resources/routes' },
+    { key: 'routeRef', title: 'Reference File', label: 'Reference Route', placeholder: 'base-routes', extension: '.xml', pathPlaceholder: 'src/main/resources/routes/base' },
   ], { ownPath: true }),
   new Part('apictl', 'APIController', [
     { key: 'api', title: 'API File', label: 'API', placeholder: 'CustomerPortfolioApi' },
@@ -498,7 +498,7 @@ $('form').addEventListener('submit', async e => {
       return { ...c, loc, error: err.message };
     }
   };
-  // An Endpoint Route with "*" (e.g. payment*.xml): list its folder and pull every file that fits.
+  // An Endpoint File with "*" (e.g. payment*.xml): list its folder and pull every file that fits.
   const MAX_MATCHES = 50;
   const expand = async (c, cfg) => {
     let loc;
@@ -583,7 +583,7 @@ $('form').addEventListener('submit', async e => {
 });
 
 function render(results, apiPath, handlers = {}) {
-  // Several Route files when the Endpoint Route has "*": each is searched, and shown in its own tab.
+  // Several Route files when the Endpoint File has "*": each is searched, and shown in its own tab.
   // The Reference Route files come after them, in tabs of the same pane (marked "ref"): they are
   // not searched for the Endpoint method, only used to follow and check route references.
   const isRoute = r => r.key === 'route' || r.key === 'routeRef';
@@ -784,8 +784,8 @@ function drawRouteFlow() {
       `<ol><li><span class="rf-kind">from</span> <code>${esc(route.from)}</code> ${at(file, route.fromLine)}</li>${flow.steps.map(stepHtml).join('')}</ol></div>`;
   }).join('') + referenceCheck([...refs.values()], at, how) +
     (missing ? `<p class="note">Only routes in the pulled files are followed. ${view.routeFiles.some(f => f.key === 'routeRef')
-      ? 'Add more base route files with a pattern in Reference Route File (e.g. <code>base*</code>).'
-      : 'Put the base routes file in Reference Route File, or widen the Endpoint Route pattern (e.g. <code>*</code>).'}</p>` : '');
+      ? 'Add more base route files with a pattern in Reference File (e.g. <code>base*</code>).'
+      : 'Put the base routes file in Reference File, or widen the Endpoint File pattern (e.g. <code>*</code>).'}</p>` : '');
   const bad = [...refs.values()].filter(r => r.missing).length;
   $('route-flow-state').textContent = `${steps} step${steps === 1 ? '' : 's'}${followed ? `, ${followed} route${followed === 1 ? '' : 's'} followed` : ''}` +
     (refs.size ? `, ${refs.size - bad} of ${refs.size} reference${refs.size === 1 ? '' : 's'} found` : '');
