@@ -1,6 +1,6 @@
 # StoryZLine
 
-A small local web tool for tracing an eComm API through its code. Type the **API** path and give it the locations in Bitbucket of the **Route** configuration file, the **Endpoint** and, in the **APIController** box, the **API** interface and the **Controller** next to it, and the **Command**. It pulls them and follows the API: the route entries for that path, the Endpoint method(s) mapped to it, the API method(s) they call, the Controller method(s) that implement them, and the Command method(s) those call.
+A small local web tool for tracing an eComm API through its code. Type the **API** path and give it the locations in Bitbucket of the **Route** configuration file, the **Endpoint** and, in the **APIController** box, the **API** interface and the **Controller** next to it, the **Command** and the response **Builder**. It pulls them and follows the API: the route entries for that path, the Endpoint method(s) mapped to it, the API method(s) they call, the Controller method(s) that implement them, the Command method(s) those call, and the Builder method(s) that build the reply.
 
 ## Setup
 
@@ -58,7 +58,7 @@ Instead of typing Bitbucket details, keep them in an Excel sheet. The first shee
 One row per repository. An empty **Bitbucket URL** or **Project key** cell means "same as the row above", so you only need to write them once (merged cells work too). **Download** in Settings gives you a template CSV to start from.
 
 1. In the **⚙ Settings** tab, click **Load** and choose the `.xlsx` (or `.csv`) file. It is read in your browser only, and remembered there until you click **Forget**. The **Bitbucket URL** is filled in from it (a dropdown if the sheet has several; **Other URL…** to type one).
-2. In the **eComm** tab, type the **API** path and fill in the **Route**, **Endpoint**, **APIController** and **Command** boxes. All have URL, Project, Repository and Path; the Route, Endpoint and Command boxes have one **File** + Extension (`.xml` by default for Route), the APIController box has a row each for **API File** and **Controller File** (with their Extension), in the same folder:
+2. In the **eComm** tab, type the **API** path and fill in the **Route**, **Endpoint**, **APIController**, **Command** and **Builder** boxes. All have URL, Project, Repository and Path; the Route, Endpoint, Command and Builder boxes have one **File** + Extension (`.xml` by default for Route), the APIController box has a row each for **API File** and **Controller File** (with their Extension), in the same folder:
 
    | Part | Input |
    |---|---|
@@ -68,7 +68,7 @@ One row per repository. An empty **Bitbucket URL** or **Project key** cell means
    | File / API File / Controller File | the file name, text |
    | Extension | dropdown: `.java` (default; `.xml` for Route), `.xml`, `.properties`, `.yml`, `.yaml`, `.json`, `.sql`, `.wsdl`, `.xsd`, `.kt`, `.groovy`, `.gradle`, `.jsp`, `.txt`, *(no extension)*, or **Other…** to type one; added unless File already ends with it |
 
-3. Each file's joined Bitbucket URL updates as you change the parts: under the Route, Endpoint and Command boxes' line, and at the end of each file's row (API File, Controller File) in the APIController box. You can edit it before pulling:
+3. Each file's joined Bitbucket URL updates as you change the parts: under the line of the one-file boxes, and at the end of each file's row (API File, Controller File) in the APIController box. You can edit it before pulling:
    `URL /projects/ Project /repos/ Repository /browse/ Path / File Extension`
 
    No branch is added, so Bitbucket uses the repository's default branch. To pull another branch, add `?at=<branch>` to the end yourself. A file with no name is skipped.
@@ -83,14 +83,15 @@ Each box's file URL (built from its parts, or typed/pasted) can be any of:
 - A Bitbucket Cloud URL: `https://bitbucket.org/<workspace>/<repo>/src/<branch>/<path>`
 - A plain path inside that box's Project and Repository: `src/main/java/.../PortfolioEndpoint.java`
 
-## How the API path, Route, Endpoint, API, Controller and Command are matched
+## How the API path, Route, Endpoint, API, Controller, Command and Builder are matched
 
 - **API path → Route**: the route file is searched as text (XML, properties, YAML, …). Lines holding a path pattern that matches the API path are shown: `{var}` and `*` match one segment, `**` any number, and a context path like `/spl-banking` may be on either side. If none match, lines containing at least three consecutive segments of the API path; with no API path, lines naming the Endpoint class. The Route pane shows those lines with two lines of context, the same for every row.
 - **API path → Endpoint**: the API path or full URL, e.g. `/spl-banking/enq/customer/portfolio/12345`, is matched against the Endpoint's Spring (`@RequestMapping`, `@GetMapping`, …) and JAX-RS (`@Path`, `@GET`, …) mappings, with class and method paths joined. A context-path prefix (`/spl-banking`), `{path}` variables and a query string are allowed for. Each matching Endpoint method is one row, marked **Exact match** or **Matches end of API**. With no API path, every mapping in the Endpoint is a row.
 - **Endpoint → API, Controller**: the calls inside that Endpoint method on a field, parameter or variable whose type is the API interface or the Controller class (e.g. `portfolioApi.savePortfolio(…)`). Each called method is looked up by name in the API file and in the Controller file, where it is the implementation of the API method. If the Endpoint has no such field, calls to any method those files have. One Endpoint method can lead to several API and Controller methods.
 - **Controller → Command**: the same, one step further: calls inside those Controller methods on a field or variable of the Command's class (e.g. `command.enquire(…)`, or `new PortfolioCommand(…).execute()`), looked up in the Command file. Without a Controller file, the Endpoint method's calls are used.
+- **Endpoint, Controller → Builder**: calls from the Endpoint method and those Controller methods into the (response) Builder class, through a field, `new …()`, or a static call such as `PortfolioResponseBuilder.portfolio(…)`. Static calls count at every step.
 
-After **Pull from Bitbucket**, the **Flow** table lists the rows (HTTP, Path, Match, Endpoint, API, Controller, Command). Click a row (or use the arrow keys) to show its methods in the code panes below: each pane shows only the matching method(s), from the comments and annotations above down to the closing `}`, with the declarations and the Endpoint's calls highlighted. **Show whole file** switches a pane to the complete file; **Copy** copies what the pane shows. If no mapping matches the API path, the whole Endpoint file is shown.
+After **Pull from Bitbucket**, the **Flow** table lists the rows (HTTP, Path, Match, Endpoint, API, Controller, Command, Builder). Click a row (or use the arrow keys) to show its methods in the code panes below: each pane shows only the matching method(s), from the comments and annotations above down to the closing `}`, with the declarations and the Endpoint's calls highlighted. **Show whole file** switches a pane to the complete file; **Copy** copies what the pane shows. If no mapping matches the API path, the whole Endpoint file is shown.
 
 ## Security
 

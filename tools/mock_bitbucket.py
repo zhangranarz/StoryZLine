@@ -60,8 +60,8 @@ class Handler(BaseHTTPRequestHandler):
         file = os.path.normpath(os.path.join(SAMPLES, repo, file_path))
         if project != PROJECT or not file.startswith(os.path.join(SAMPLES, repo) + os.sep) or not os.path.isfile(file):
             return self.send(404, "File not found: %s/%s/%s" % (project, repo, file_path))
-        with open(file, encoding="utf-8") as f:
-            self.send(200, f.read())
+        with open(file, "rb") as f:  # byte for byte, as Bitbucket serves raw files
+            self.send(200, f.read().decode("utf-8"))
 
 
 def main():

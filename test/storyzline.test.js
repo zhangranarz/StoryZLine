@@ -449,7 +449,7 @@ test('demo files give the results listed in samples/README.md', () => {
   const lines = sample(SPRING).split(/\r?\n/);
   const get = analyse(sample(SPRING), '/enq/customer/portfolio/1').matches.find(m => m.methodName === 'getPortfolio');
   assert.match(lines[get.endLine - 1], /^ {4}\}$/);
-  assert.match(lines.slice(get.startLine - 1, get.endLine).join('\n'), /^ {4}\/\*\*[\s\S]*braces inside text[\s\S]*return ResponseEntity\.ok/);
+  assert.match(lines.slice(get.startLine - 1, get.endLine).join('\n'), /^ {4}\/\*\*[\s\S]*braces inside text[\s\S]*return PortfolioResponseBuilder\.portfolio/);
   assert.ok(!analyse(sample(SPRING), '').endpoints.some(e => e.methodName === 'auditTrail'));
 
   const list = toEntries(readCsv(sample('demo-list.csv'))).entries;
@@ -528,14 +528,14 @@ test('the API path leads through the demo Endpoint to the API and Controller met
   assert.deepStrictEqual(flow('/enq/customer/portfolio/1/export').rows.map(text), ['exact GET /enq/customer/portfolio/{customerId}/export | exportPortfolio -> exportCsv -> exportCsv']);
   assert.deepStrictEqual(flow('/enq/customer/unknown').rows, []);
   assert.strictEqual(flow('').rows.length, 5);  // no API: every mapping in the Endpoint
-  assert.deepStrictEqual(flow('').classes, { endpoint: 'CustomerPortfolioEndpoint', api: 'CustomerPortfolioApi', controller: 'CustomerPortfolioController', command: null });
+  assert.deepStrictEqual(flow('').classes, { endpoint: 'CustomerPortfolioEndpoint', api: 'CustomerPortfolioApi', controller: 'CustomerPortfolioController', command: null, builder: null });
 
   // Sections cover the whole method; the Endpoint's calls on portfolioApi are marked, not audit.log().
   const get = flow('/enq/customer/portfolio/1').rows[0];
   const epLines = sample(SPRING).split(/\r?\n/);
   assert.match(epLines[get.endpoint.startLine - 1], /^ {4}\/\*\*/);
   assert.match(epLines[get.endpoint.endLine - 1], /^ {4}\}$/);
-  assert.deepStrictEqual(get.callLines.map(n => epLines[n - 1].trim()), ['return ResponseEntity.ok(portfolioApi.getPortfolio(customerId, currency));']);
+  assert.deepStrictEqual(get.callLines.map(n => epLines[n - 1].trim()), ['return PortfolioResponseBuilder.portfolio(portfolioApi.getPortfolio(customerId, currency));']);
   const apiLines = sample(API_FILE).split(/\r?\n/);
   assert.match(apiLines[get.api[0].startLine - 1], /Loads a portfolio/);
   const ctlLines = sample(CTL_FILE).split(/\r?\n/);
@@ -620,4 +620,34 @@ test('a Command called straight from the Endpoint, through a field or a new obje
   }
   // No Command file: nothing to look up.
   assert.deepStrictEqual(traceFlows({ endpoint: viaField }).rows[0].command, []);
+});
+
+// ---- Builder ----
+
+const BUILDER_FILE = 'ecomm-services/src/main/java/com/example/ecomm/enq/builder/PortfolioResponseBuilder.java';
+
+test('Builder calls are found in the Endpoint and the Controller, including static calls', () => {
+  const { rows, classes } = traceFlows({
+    endpoint: sample(SPRING), api: sample(API_FILE), controller: sample(CTL_FILE), command: sample(CMD_FILE), builder: sample(BUILDER_FILE),
+  });
+  assert.strictEqual(classes.builder, 'PortfolioResponseBuilder');
+  assert.deepStrictEqual(rows.map(r => `${r.endpoint.name}: ${r.builder.map(b => b.name).join('+') || '-'} ${JSON.stringify(r.builderCallLines)}`), [
+    'getPortfolio: portfolio {"endpoint":[40],"controller":[]}',
+    'updatePortfolio: noContent {"endpoint":[48],"controller":[]}',
+    'summary: - {"endpoint":[],"controller":[]}',
+    'removeHolding: - {"endpoint":[],"controller":[]}',
+    'exportPortfolio: csv {"endpoint":[],"controller":[51]}',
+  ]);
+  const epLines = sample(SPRING).split(/\r?\n/);
+  assert.match(epLines[39], /PortfolioResponseBuilder\.portfolio\(/);
+  const ctlLines = sample(CTL_FILE).split(/\r?\n/);
+  assert.match(ctlLines[50], /PortfolioResponseBuilder\.csv\(/);
+  // The Command step is unchanged by the Builder.
+  assert.deepStrictEqual(rows.map(r => r.command.map(c => c.name).join('+')), ['enquire', 'update', 'summarise', 'deleteHolding', 'holdings']);
+
+  // A Builder held in a field, and one created with new.
+  const builder = 'public class B {\n  public R build(Object o) { return null; }\n}';
+  const viaField = '@RestController\npublic class E {\n  private final B builder;\n  @GetMapping("/x")\n  public R x() { return builder.build(1); }\n}';
+  const viaNew = '@RestController\npublic class E {\n  @GetMapping("/x")\n  public R x() { return new B().build(1); }\n}';
+  for (const ep of [viaField, viaNew]) assert.deepStrictEqual(traceFlows({ endpoint: ep, builder }).rows[0].builder.map(b => b.name), ['build']);
 });

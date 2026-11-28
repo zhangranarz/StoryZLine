@@ -2,6 +2,7 @@ package com.example.ecomm.enq;
 
 import java.util.List;
 
+import com.example.ecomm.enq.builder.PortfolioResponseBuilder;
 import com.example.ecomm.enq.controller.CustomerPortfolioApi;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -36,7 +37,7 @@ public class CustomerPortfolioEndpoint {
         }
         String note = "braces inside text { } must not end the method";
         audit.log("getPortfolio", customerId);
-        return ResponseEntity.ok(portfolioApi.getPortfolio(customerId, currency));
+        return PortfolioResponseBuilder.portfolio(portfolioApi.getPortfolio(customerId, currency));
     }
 
     // Same path as above, but POST: both methods are shown for that API.
@@ -44,7 +45,7 @@ public class CustomerPortfolioEndpoint {
     public ResponseEntity<Void> updatePortfolio(@PathVariable String customerId, @RequestBody Portfolio portfolio) {
         portfolioApi.validate(portfolio);
         portfolioApi.savePortfolio(customerId, portfolio);
-        return ResponseEntity.noContent().build();
+        return PortfolioResponseBuilder.noContent();
     }
 
     /** One method, two paths and two HTTP methods. Try API: /enq/customer/overview */

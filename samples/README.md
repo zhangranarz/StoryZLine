@@ -1,6 +1,6 @@
 # Demo kit
 
-Try StoryZLine without a real Bitbucket: a pretend Bitbucket serves the sample Route, Endpoint, API, Controller and Command files in this folder.
+Try StoryZLine without a real Bitbucket: a pretend Bitbucket serves the sample Route, Endpoint, API, Controller, Command and Builder files in this folder.
 
 ## Start
 
@@ -10,7 +10,7 @@ Try StoryZLine without a real Bitbucket: a pretend Bitbucket serves the sample R
 
 ## Try it in the eComm tab
 
-Fill in the four boxes (Project `DEMO`, Repository `ecomm-services`):
+Fill in the five boxes (Project `DEMO`, Repository `ecomm-services`):
 
 | Box | Path | File(s) |
 |---|---|---|
@@ -18,12 +18,13 @@ Fill in the four boxes (Project `DEMO`, Repository `ecomm-services`):
 | Endpoint | `src/main/java/com/example/ecomm/enq` | File `CustomerPortfolioEndpoint` |
 | APIController | `src/main/java/com/example/ecomm/enq/controller` | API File `CustomerPortfolioApi`, Controller File `CustomerPortfolioController` |
 | Command | `src/main/java/com/example/ecomm/enq/command` | File `CustomerPortfolioCommand` |
+| Builder | `src/main/java/com/example/ecomm/enq/builder` | File `PortfolioResponseBuilder` |
 
 Then type an **API** and click **Pull from Bitbucket**:
 
-| API | Flow rows: Endpoint → API → Controller (→ Command) |
+| API | Flow rows: Endpoint → API → Controller (→ Command, Builder) |
 |---|---|
-| `/spl-banking/enq/customer/portfolio/12345` | `getPortfolio()` → `getPortfolio()` → `getPortfolio()` → `enquire()`, and `updatePortfolio()` (POST) → `validate()`, `savePortfolio()` → `validate()`, `savePortfolio()` → `update()` |
+| `/spl-banking/enq/customer/portfolio/12345` | `getPortfolio()` → `getPortfolio()` → `getPortfolio()` → `enquire()`, Builder `portfolio()`; and `updatePortfolio()` (POST) → `validate()`, `savePortfolio()` → `validate()`, `savePortfolio()` → `update()`, Builder `noContent()` |
 | `/enq/customer/overview` | `summary()` → `summary()` → `summary()`, exact match |
 | `/enq/customer/portfolio/12345/export` | `exportPortfolio()` → `exportCsv()` → `exportCsv()` (the names differ along the way) |
 | `/enq/customer/unknown` | none: the whole Endpoint file is shown |
@@ -31,7 +32,7 @@ Then type an **API** and click **Pull from Bitbucket**:
 
 The Route pane shows the route entries whose `path` matches the API: for the first API, `portfolio-get` and `portfolio-update` (`/spl-banking/enq/customer/portfolio/*`).
 
-How the demo is wired: the Endpoint holds a `CustomerPortfolioApi portfolioApi` field and calls it; `CustomerPortfolioController implements CustomerPortfolioApi` and calls `CustomerPortfolioCommand`, whose methods each send one host request (the made-up service codes are in its `SERVICE_` constants). The POST row reaches two methods; the Endpoint's `audit.log(...)` calls are not counted, because `audit` is neither the API nor the Controller.
+How the demo is wired: the Endpoint holds a `CustomerPortfolioApi portfolioApi` field and calls it; `CustomerPortfolioController implements CustomerPortfolioApi` and calls `CustomerPortfolioCommand`, whose methods each send one host request (the made-up service codes are in its `SERVICE_` constants). `PortfolioResponseBuilder` turns host results into responses (including host status → HTTP status); the Endpoint calls it statically, and the Controller's export does too. The POST row reaches two methods; the Endpoint's `audit.log(...)` calls are not counted, because `audit` is neither the API nor the Controller.
 
 Also try:
 - Clear the Controller File: the Controller column says *not pulled*, the API column still fills.

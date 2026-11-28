@@ -1,5 +1,6 @@
 package com.example.ecomm.enq.controller;
 
+import com.example.ecomm.enq.builder.PortfolioResponseBuilder;
 import com.example.ecomm.enq.command.CustomerPortfolioCommand;
 import org.springframework.stereotype.Component;
 
@@ -47,11 +48,7 @@ public class CustomerPortfolioController implements CustomerPortfolioApi {
 
     @Override
     public byte[] exportCsv(String customerId) {
-        StringBuilder csv = new StringBuilder("holding,quantity\n");
-        for (Holding h : command.holdings(customerId)) {
-            csv.append(h.getId()).append(',').append(h.getQuantity()).append('\n');
-        }
-        return csv.toString().getBytes();
+        return PortfolioResponseBuilder.csv(command.holdings(customerId));
     }
 
     private Portfolio unused() { return null; }
