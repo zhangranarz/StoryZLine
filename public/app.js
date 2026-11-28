@@ -843,8 +843,13 @@ function drawRouteFlow() {
       followed++;
       check(s, s.follow);
       const tag = how(s.follow);
-      html += `<div class="rf-sub${s.follow.ref ? ' rf-ref' : ''}"><div class="rf-head">↳ route <code>${esc(s.follow.id || s.follow.from)}</code> ${at(s.follow.file, s.follow.line)}` +
-        `${tag ? ` <span class="rf-tag">${esc(tag)}</span>` : ''}</div><ol>${s.follow.steps.map(stepHtml).join('')}</ol></div>`;
+      // Collapsible: Hide / Expand (remembered per route, by its file and line).
+      const key = routeKey(s.follow);
+      html += `<details class="rf-sub${s.follow.ref ? ' rf-ref' : ''}" data-key="${esc(key)}"${hiddenRoutes.has(key) ? '' : ' open'}>` +
+        `<summary class="rf-head">↳ route <code>${esc(s.follow.id || s.follow.from)}</code> ${at(s.follow.file, s.follow.line)}` +
+        `${tag ? ` <span class="rf-tag">${esc(tag)}</span>` : ''} <span class="rf-toggle" aria-hidden="true"></span>` +
+        ` <span class="rf-count">${s.follow.steps.length} step${s.follow.steps.length === 1 ? '' : 's'}</span></summary>` +
+        `<ol>${s.follow.steps.map(stepHtml).join('')}</ol></details>`;
     }
     return html + '</li>';
   };
@@ -860,6 +865,7 @@ function drawRouteFlow() {
   $('route-flow-state').textContent = `${steps} step${steps === 1 ? '' : 's'}${followed ? `, ${followed} route${followed === 1 ? '' : 's'} followed` : ''}` +
     (refs.size ? `, ${refs.size - bad} of ${refs.size} reference${refs.size === 1 ? '' : 's'} found` : '');
   $('route-flow-state').className = 'state' + (refs.size && !bad ? ' ok' : '');
+  drawRouteFlowButtons();
 }
 
 // The reference check under the Route flow: each route reference, and the route it leads to (or not).
@@ -897,10 +903,38 @@ function jumpTo(key, line, file) {
 $('route-flow').addEventListener('click', e => {
   const a = e.target.closest('a[data-line]');
   if (!a || !view) return;
-  e.preventDefault();
+  e.preventDefault();  // also keeps a link in a route's heading from hiding/expanding it
   if (a.classList.contains('rf-link')) jumpTo(a.dataset.pane, Number(a.dataset.line));
   else jumpTo('route', Number(a.dataset.line), Number(a.dataset.file));
 });
+
+// Followed routes the user hid (by file and line, as file names can repeat across rows); kept
+// while the page is open, so they stay hidden on other rows and after pulling again.
+const hiddenRoutes = new Set();
+const routeKey = r => `${view.routeFiles[r.file] ? (view.routeFiles[r.file].loc || {}).path || r.file : r.file}:${r.line}`;
+// "toggle" doesn't bubble: listen while it goes down.
+$('route-flow').addEventListener('toggle', e => {
+  const d = e.target;
+  if (!d.matches || !d.matches('details.rf-sub')) return;
+  for (const same of $('route-flow').querySelectorAll(`details.rf-sub[data-key="${CSS.escape(d.dataset.key)}"]`)) {
+    if (same.open !== d.open) same.open = d.open;  // the same route followed from elsewhere
+  }
+  if (d.open) hiddenRoutes.delete(d.dataset.key); else hiddenRoutes.add(d.dataset.key);
+  drawRouteFlowButtons();
+}, true);
+
+// Expand all / Hide all, in the card's title; only when there are followed routes.
+function drawRouteFlowButtons() {
+  const subs = [...$('route-flow').querySelectorAll('details.rf-sub')];
+  $('rf-expand-all').hidden = $('rf-hide-all').hidden = !subs.length;
+  $('rf-expand-all').disabled = subs.every(d => d.open);
+  $('rf-hide-all').disabled = subs.every(d => !d.open);
+}
+for (const [id, open] of [['rf-expand-all', true], ['rf-hide-all', false]]) {
+  $(id).addEventListener('click', () => {
+    for (const d of $('route-flow').querySelectorAll('details.rf-sub')) d.open = open;
+  });
+}
 
 // The process diagram, with the selected row's path highlighted.
 function drawDiagram() {
