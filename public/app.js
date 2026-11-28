@@ -308,6 +308,7 @@ function resetAfter(key) {
 // each one, then rebuilds the Endpoint.
 function refreshPicks() {
   $('ep-base').value = $('conn-url').value.trim();
+  $('ep-base').title = $('ep-base').value;  // the box is narrow: show the whole URL on hover
   let rows = pickEntries.filter(e => sameUrl(e.baseUrl, $('conn-url').value));
   for (const k of LEVELS) {
     const sel = $('pick-' + k);
