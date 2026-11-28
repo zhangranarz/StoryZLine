@@ -1041,3 +1041,23 @@ test('Route flow: loops stop, comments and CDATA are handled, schemes and beans 
   assert.deepStrictEqual(Camel.beanCall({ kind: 'to', target: 'bean:ctl?cache=true&method=go(${body})' }), { bean: 'ctl', method: 'go' });
   assert.strictEqual(Camel.beanCall({ kind: 'log', target: 'bean:ctl?method=go' }), null);
 });
+
+test('Reference Route file: base routes are found by <from uri>, else by route id', () => {
+  const files = ['payment-spl-1.1.xml', 'base-routes.xml'];
+  const all = files.flatMap((f, i) => Camel.parseRoutes(sample(ROUTE_DIR + f)).map(route => ({ route, file: i, ref: i === 1 })));
+  const start = all.find(x => x.route.id === 'payments.spl.submit');
+  const flow = Camel.followRoutes(start.route, all, start.file);
+  const audit = flow.steps[0].follow.steps.find(x => x.kind === 'wireTap');
+  assert.deepStrictEqual([audit.follow.id, audit.follow.by, audit.follow.ref, audit.follow.file, audit.follow.line], ['audit.write', 'from', true, 1, 6]);
+  const mask = audit.follow.steps[0];
+  assert.deepStrictEqual([mask.target, mask.follow.id, mask.follow.by, mask.follow.ref], ['direct:base.mask', 'base.mask', 'id', true]);
+  assert.deepStrictEqual(mask.follow.steps.map(x => `${x.kind} ${x.target} | ${x.detail} @${x.file}:${x.line}`), ['setHeader masked | constant true @1:15']);
+  assert.strictEqual(flow.followed, 3);
+  // A <from uri> name wins over a route id.
+  const both = [
+    { route: { id: 'x', from: 'direct:other', line: 1, steps: [] }, file: 0 },
+    { route: { id: 'y', from: 'direct:x', line: 9, steps: [] }, file: 0 },
+  ];
+  const f = Camel.followRoutes({ steps: [{ kind: 'to', target: 'direct:x', line: 1, children: [] }] }, both, 0);
+  assert.deepStrictEqual([f.steps[0].follow.id, f.steps[0].follow.by], ['y', 'from']);
+});

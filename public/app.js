@@ -331,7 +331,12 @@ $('api').addEventListener('input', () => store.set('api', $('api').value.trim())
 
 const parts = [
   new Part('endpoint', 'Endpoint', [{ key: 'endpoint', title: 'File', label: 'Endpoint', placeholder: 'CustomerPortfolioEndpoint' }]),
-  new Part('route', 'Route', [{ key: 'route', title: 'File', label: 'Route', placeholder: 'portfolio-routes', extension: '.xml' }]),
+  // Route File: searched for the Endpoint method's route. Reference Route File: the base routes the
+  // routes call (by <from uri> or route id), used to follow and check those references.
+  new Part('route', 'Route', [
+    { key: 'route', title: 'Route File', label: 'Route', placeholder: 'portfolio-routes', extension: '.xml' },
+    { key: 'routeRef', title: 'Reference Route File', label: 'Reference Route', placeholder: 'base-routes', extension: '.xml' },
+  ]),
   new Part('apictl', 'APIController', [
     { key: 'api', title: 'API File', label: 'API', placeholder: 'CustomerPortfolioApi' },
     { key: 'controller', title: 'Controller File', label: 'Controller', placeholder: 'CustomerPortfolioController' },
@@ -485,7 +490,7 @@ $('form').addEventListener('submit', async e => {
       return [{ ...c, error: err.message }];
     }
     const pattern = loc.path.split('/').pop();
-    if (c.key !== 'route' || !Loc.hasWildcard(pattern)) return [await pull(c, cfg)];
+    if ((c.key !== 'route' && c.key !== 'routeRef') || !Loc.hasWildcard(pattern)) return [await pull(c, cfg)];
     const folder = loc.path.split('/').slice(0, -1).join('/');
     const where = `${loc.project}/${loc.repo}/${folder}`;
     const names = [];
@@ -561,9 +566,13 @@ $('form').addEventListener('submit', async e => {
 
 function render(results, apiPath, handlers = {}) {
   // Several Route files when the Route File has "*": each is searched, and shown in its own tab.
-  const routeFiles = results.filter(r => r.key === 'route');
-  const files = Object.fromEntries(results.filter(r => r.key !== 'route').map(r => [r.key, r]));
-  if (routeFiles.length) files.route = routeFiles.find(f => f.content != null) || routeFiles[0];
+  // The Reference Route files come after them, in tabs of the same pane (marked "ref"): they are
+  // not searched for the Endpoint method, only used to follow and check route references.
+  const isRoute = r => r.key === 'route' || r.key === 'routeRef';
+  const routeFiles = [...results.filter(r => r.key === 'route'), ...results.filter(r => r.key === 'routeRef')];
+  const mainFiles = routeFiles.filter(r => r.key === 'route');
+  const files = Object.fromEntries(results.filter(r => !isRoute(r)).map(r => [r.key, r]));
+  if (routeFiles.length) files.route = mainFiles.find(f => f.content != null) || routeFiles.find(f => f.content != null) || routeFiles[0];
   const src = k => (files[k] && files[k].content != null ? files[k].content : null);
   const flows = Java.traceFlows({
     endpoint: src('endpoint'), api: src('api'), controller: src('controller'), command: src('command'), apiPath,
@@ -590,7 +599,8 @@ function render(results, apiPath, handlers = {}) {
   // Each row's route: the <route> whose <from uri="…_name"/> names its Endpoint method.
   // In every Route file; each route found remembers its file (its index in routeFiles).
   const multi = routeFiles.length > 1;
-  const routeOk = routeFiles.map((f, i) => ({ f, i })).filter(x => x.f.content != null);
+  const allOk = routeFiles.map((f, i) => ({ f, i })).filter(x => x.f.content != null);
+  const routeOk = allOk.filter(x => x.f.key === 'route');
   let byName = false;
   if (routeOk.length) {
     for (const r of flows.rows) r.routes = [];
@@ -617,7 +627,7 @@ function render(results, apiPath, handlers = {}) {
   const graph = Diagram.flowGraph({ rows: flows.rows, apiPath, routeLines });
   view = { files, routeFiles, routeHits, routeTab: 0, flows, byName, graph, apiPath, selected: 0, panes: {}, whole: {} };
   // For the Route flow: every <route> of every Route file, and the methods a bean step can lead to.
-  view.camel = routeOk.flatMap(({ f, i }) => Camel.parseRoutes(f.content).map(route => ({ route, file: i })));
+  view.camel = allOk.flatMap(({ f, i }) => Camel.parseRoutes(f.content).map(route => ({ route, file: i, ref: f.key === 'routeRef' })));
   view.linkable = [['controller', 'Controller'], ['api', 'API']].flatMap(([key, label]) =>
     (src(key) != null ? Java.findMethods(src(key)).map(m => ({ key, label, name: m.name, declLine: m.declLine })) : []));
   $('result').hidden = false;
@@ -666,7 +676,7 @@ function render(results, apiPath, handlers = {}) {
   if (flows.classes.command && flows.rows.length && !flows.rows.some(r => r.command.length || r.commandAuto)) {
     notes.push(`No calls to ${flows.classes.command} were found in the ${src('controller') != null ? 'Controller' : 'Endpoint'} methods.`);
   }
-  const inFiles = multi ? ` in ${routeOk.length} Route files matching ${routeFiles[0].pattern}` : '';
+  const inFiles = mainFiles.length > 1 ? ` in ${routeOk.length} Route files matching ${mainFiles[0].pattern}` : '';
   if (byName) {
     const missing = flows.rows.filter(r => !r.routes.length).map(r => `_${r.endpoint.name}`);
     notes.push(`Route: found by the Endpoint method name in <from uri="…_name"/>${inFiles}.${missing.length ? ` No route for ${missing.join(', ')}.` : ''}`);
@@ -722,18 +732,31 @@ function drawRouteFlow() {
     return m ? ` <a href="#" class="rf-link" data-pane="${m.key}" data-line="${m.declLine}">→ ${m.label} ${esc(m.name)}()</a>` : '';
   };
   let steps = 0, followed = 0, missing = 0;
+  // Reference check: every route reference (direct:/seda:/vm: call) once, with where it was found.
+  const refs = new Map();
+  const check = (s, hit) => {
+    const uri = s.target.split('?')[0];
+    if (!refs.has(uri) || (refs.get(uri).missing && hit)) refs.set(uri, { uri, from: s, hit, missing: !hit });
+  };
+  const how = h => [h.ref ? 'Reference Route' : '', h.by === 'id' ? 'by route id' : ''].filter(Boolean).join(', ');
   const stepHtml = s => {
     steps++;
     let html = `<li><span class="rf-kind">${esc(s.kind)}</span>${s.target ? ` <code>${esc(s.target)}</code>` : ''}` +
       `${s.detail ? ` <span class="rf-detail">${esc(s.detail)}</span>` : ''} ${at(s.file, s.line)}${link(s.bean)}`;
-    if (s.missing) { missing++; html += ` <span class="rf-note">no pulled Route file has a route starting with ${esc(s.target.split('?')[0])}</span>`; }
-    if (s.loop) html += ` <span class="rf-note">back to route ${esc(s.loop.id)}, shown above</span>`;
+    if (s.missing) {
+      missing++;
+      check(s, null);
+      html += ` <span class="rf-note bad">not found in the Route or Reference Route files</span>`;
+    }
+    if (s.loop) { check(s, s.loop); html += ` <span class="rf-note">back to route ${esc(s.loop.id)}, shown above</span>`; }
     if (s.deep) html += ' <span class="rf-note">not followed further</span>';
     if (s.children.length) html += `<ol>${s.children.map(stepHtml).join('')}</ol>`;
     if (s.follow) {
       followed++;
-      html += `<div class="rf-sub"><div class="rf-head">↳ route <code>${esc(s.follow.id || s.follow.from)}</code> ${at(s.follow.file, s.follow.line)}</div>` +
-        `<ol>${s.follow.steps.map(stepHtml).join('')}</ol></div>`;
+      check(s, s.follow);
+      const tag = how(s.follow);
+      html += `<div class="rf-sub${s.follow.ref ? ' rf-ref' : ''}"><div class="rf-head">↳ route <code>${esc(s.follow.id || s.follow.from)}</code> ${at(s.follow.file, s.follow.line)}` +
+        `${tag ? ` <span class="rf-tag">${esc(tag)}</span>` : ''}</div><ol>${s.follow.steps.map(stepHtml).join('')}</ol></div>`;
     }
     return html + '</li>';
   };
@@ -741,8 +764,26 @@ function drawRouteFlow() {
     const flow = Camel.followRoutes(route, view.camel, file);
     return `<div class="rf-route"><div class="rf-head">route <code>${esc(route.id || route.from)}</code> ${at(file, route.line)}</div>` +
       `<ol><li><span class="rf-kind">from</span> <code>${esc(route.from)}</code> ${at(file, route.fromLine)}</li>${flow.steps.map(stepHtml).join('')}</ol></div>`;
-  }).join('') + (missing ? '<p class="note">Only routes in the pulled Route files are followed. To follow more, widen the Route File pattern (e.g. <code>*</code>).</p>' : '');
-  $('route-flow-state').textContent = `${steps} step${steps === 1 ? '' : 's'}${followed ? `, ${followed} route${followed === 1 ? '' : 's'} followed` : ''}`;
+  }).join('') + referenceCheck([...refs.values()], at, how) +
+    (missing ? `<p class="note">Only routes in the pulled files are followed. ${view.routeFiles.some(f => f.key === 'routeRef')
+      ? 'Add more base route files with a pattern in Reference Route File (e.g. <code>base*</code>).'
+      : 'Put the base routes file in Reference Route File, or widen the Route File pattern (e.g. <code>*</code>).'}</p>` : '');
+  const bad = [...refs.values()].filter(r => r.missing).length;
+  $('route-flow-state').textContent = `${steps} step${steps === 1 ? '' : 's'}${followed ? `, ${followed} route${followed === 1 ? '' : 's'} followed` : ''}` +
+    (refs.size ? `, ${refs.size - bad} of ${refs.size} reference${refs.size === 1 ? '' : 's'} found` : '');
+  $('route-flow-state').className = 'state' + (refs.size && !bad ? ' ok' : '');
+}
+
+// The reference check under the Route flow: each route reference, and the route it leads to (or not).
+function referenceCheck(refs, at, how) {
+  if (!refs.length) return '';
+  const rows = refs.map(r => {
+    const h = r.hit;
+    const where = h ? `route <code>${esc(h.id || '')}</code> ${at(h.file, h.line)}${how(h) ? ` <span class="rf-tag">${esc(how(h))}</span>` : ''}` : '<span class="rf-note bad">not found</span>';
+    return `<tr class="${h ? 'ok' : 'bad'}"><td>${h ? '✓' : '✗'}</td><td><code>${esc(r.uri)}</code></td><td>${at(r.from.file, r.from.line)}</td><td>${where}</td></tr>`;
+  });
+  return `<div class="rf-check"><div class="rf-head">Reference check</div><div class="table-wrap"><table>` +
+    `<thead><tr><th></th><th>Reference</th><th>Called at</th><th>Found</th></tr></thead><tbody>${rows.join('')}</tbody></table></div></div>`;
 }
 
 // Shows a line in a code pane (the whole file if the line is outside the found sections) and flashes it.
@@ -782,7 +823,8 @@ function drawDiagram() {
     $('diagram-state').textContent = '';
     return;
   }
-  const routeFile = view.routeFiles.length > 1 ? `${view.routeFiles[0].pattern} (${view.routeFiles.length} files)`
+  const mains = view.routeFiles.filter(f => f.key === 'route');
+  const routeFile = mains.length > 1 ? `${mains[0].pattern} (${mains.length} files)`
     : files.route && files.route.loc ? files.route.loc.path.split('/').pop() : '';
   const lanes = {
     route: routeFile, endpoint: flows.classes.endpoint, api: flows.classes.api, controller: flows.classes.controller,
@@ -891,14 +933,17 @@ function drawRouteTabs(pane) {
   const counts = view.routeFiles.map((f, k) => (f.content != null ? routeCount(k) : 0));
   const any = counts.some(n => n > 0);
   const hide = store.get('routeHideEmpty') !== 'no';
-  const shown = k => !hide || !any || counts[k] > 0 || view.routeFiles[k].error || k === view.routeForce;
+  const isRef = k => view.routeFiles[k].key === 'routeRef';  // Reference Route files always keep their tab
+  const shown = k => !hide || !any || counts[k] > 0 || isRef(k) || view.routeFiles[k].error || k === view.routeForce;
   if (!shown(view.routeTab)) view.routeTab = counts.findIndex(n => n > 0);
   const hidden = view.routeFiles.filter((f, k) => !shown(k)).length;
   bar.innerHTML = view.routeFiles.map((f, k) => {
     if (!shown(k)) return '';
     const n = counts[k];
-    const badge = f.error ? '<span class="tab-count bad">!</span>' : `<span class="tab-count${n ? '' : ' zero'}">${n}</span>`;
-    return `<button type="button" class="pane-tab${n ? '' : ' empty'}" role="tab" data-file="${k}" aria-selected="${k === view.routeTab}"` +
+    const badge = f.error ? '<span class="tab-count bad">!</span>'
+      : isRef(k) ? '<span class="tab-count ref" title="Reference Route file">ref</span>'
+      : `<span class="tab-count${n ? '' : ' zero'}">${n}</span>`;
+    return `<button type="button" class="pane-tab${n || isRef(k) ? '' : ' empty'}" role="tab" data-file="${k}" aria-selected="${k === view.routeTab}"` +
       ` title="${esc(f.loc ? f.loc.path : f.url)}">${esc(f.loc ? f.loc.path.split('/').pop() : f.url)} ${badge}</button>`;
   }).join('') +
     `<label class="tab-filter" title="Hide the Route files where this row has no route"><input type="checkbox" class="route-hide"${hide ? ' checked' : ''}>` +
@@ -947,6 +992,7 @@ function drawPane(key) {
   msg.className = 'pane-msg note';
   msg.textContent = key === 'command' && row && row.commandAuto
     ? `From @CommandHandler on ${row.commandAuto.handler.method}() in the Controller${row.commandAuto.handler.validator ? ` (validator ${row.commandAuto.handler.validator})` : ''}: the whole class.`
+    : key === 'route' && f.key === 'routeRef' ? 'Reference Route file: the base routes that the routes call. Its routes are not matched to the Endpoint; see the reference check in Route flow.'
     : ranges.length ? ''
     : key === 'route' ? (view.byName && row
       ? `No <route>${view.routeFiles.length > 1 ? ' in this file' : ''} has a <from uri> ending in _${row.endpoint.name}: showing the whole file.`

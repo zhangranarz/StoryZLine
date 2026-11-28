@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Demo base routes for StoryZLine (the Reference Route File): invented, not a real application's. -->
+<routes xmlns="http://camel.apache.org/schema/spring">
+
+    <!-- Called as seda:audit.write: found by its <from uri>. -->
+    <route id="audit.write">
+        <from uri="seda:audit.write"/>
+        <to uri="direct:base.mask"/>
+        <to uri="bean:auditService?method=write"/>
+    </route>
+
+    <!-- Called as direct:base.mask: no <from uri> has that name, so it is found by its route id. -->
+    <route id="base.mask">
+        <from uri="direct:maskSensitiveFields"/>
+        <setHeader name="masked">
+            <constant>true</constant>
+        </setHeader>
+    </route>
+</routes>

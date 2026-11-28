@@ -127,23 +127,30 @@
   // already on the way gets .loop; deeper than maxDepth gets .deep.
   // Every step gets .file: the file it is in (startFile for the start route's own steps).
   function followRoutes(start, all, startFile, maxDepth = 8) {
+    // A call is matched to the route whose <from uri> has its name, else to the route with that id.
     const index = new Map();
+    const byId = new Map();
     for (const x of all) {
       const name = internalName(x.route.from);
       if (name && !index.has(name)) index.set(name, x);
+      if (x.route.id && !byId.has(x.route.id)) byId.set(x.route.id, x);
     }
     let followed = 0;
     const walk = (list, trail, file) => list.map(s => {
       const out = { ...s, file, children: walk(s.children, trail, file) };
       const name = SENDERS.has(s.kind) ? internalName(s.target) : null;
       if (name) {
-        const hit = index.get(name);
+        const hit = index.get(name) || byId.get(name);
+        const by = index.get(name) ? 'from' : 'id';
         if (!hit) out.missing = name;
-        else if (trail.includes(hit.route)) out.loop = { id: hit.route.id, file: hit.file, line: hit.route.line };
+        else if (trail.includes(hit.route)) out.loop = { id: hit.route.id, file: hit.file, line: hit.route.line, by, ref: !!hit.ref };
         else if (trail.length > maxDepth) out.deep = true;
         else {
           followed++;
-          out.follow = { id: hit.route.id, from: hit.route.from, file: hit.file, line: hit.route.line, steps: walk(hit.route.steps, [...trail, hit.route], hit.file) };
+          out.follow = {
+            id: hit.route.id, from: hit.route.from, file: hit.file, line: hit.route.line, by, ref: !!hit.ref,
+            steps: walk(hit.route.steps, [...trail, hit.route], hit.file),
+          };
         }
       }
       return out;

@@ -115,6 +115,7 @@ pre { margin: 0; overflow: auto; max-height: 75vh; background: var(--code-bg); f
 .tab-count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font: 600 11px/18px system-ui, sans-serif; text-align: center; }
 .tab-count.zero { background: var(--border); color: var(--muted); }
 .tab-count.bad { background: var(--err); }
+.tab-count.ref { background: var(--ok); }
 /* Route flow: a route's steps in order, followed routes nested under the step that calls them. */
 .rf-route + .rf-route { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
 .rf-head { font-weight: 600; margin: 2px 0 4px; }
@@ -126,6 +127,14 @@ pre { margin: 0; overflow: auto; max-height: 75vh; background: var(--code-bg); f
 .rf-link { margin-left: 6px; font-size: 12px; font-weight: 600; }
 .rf-note { margin-left: 6px; color: var(--muted); font-size: 12px; font-style: italic; }
 .rf-sub { margin: 4px 0 6px; padding: 2px 0 2px 10px; border-left: 2px solid var(--accent); }
+.rf-sub.rf-ref { border-left-color: var(--ok); }
+.rf-tag { margin-left: 6px; padding: 0 6px; border-radius: 9px; background: var(--match); color: var(--text); font-size: 11px; font-weight: 600; }
+.rf-note.bad { color: var(--err); font-style: normal; font-weight: 600; }
+.rf-check { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.rf-check table { margin-top: 4px; }
+.rf-check td:first-child { width: 1.5em; font-weight: 700; }
+.rf-check tr.ok td:first-child { color: var(--ok); }
+.rf-check tr.bad td:first-child { color: var(--err); }
 .tab-filter { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; white-space: nowrap; padding: 0 4px 6px; color: var(--muted); font-size: 12px; cursor: pointer; }
 .endpoint + .endpoint { margin-top: 4px; }
 .p-urls { display: grid; gap: 8px; }
