@@ -98,15 +98,15 @@
     const project = String(parts.project || '').trim();
     const repo = String(parts.repo || '').trim();
     const branch = String(parts.branch || '').trim();
-    if (!project || !repo) throw new LocationError('Pick a project key and repository.');
+    if (!project || !repo) throw new LocationError('Fill in Project and Repository.');
     let name = String(parts.fileName || '').trim().replace(/^[\\/]+/, '');
-    if (!name) throw new LocationError('Enter the File name.');
+    if (!name) throw new LocationError('Fill in File.');
     if (parts.extension === undefined) {
       if (!/\.[A-Za-z0-9]+$/.test(name)) name += '.java';
     } else {
       const ext = String(parts.extension).trim().replace(/^\.?/, '.');
       if (ext !== '.') {
-        if (!/^\.[A-Za-z0-9_-]+$/.test(ext)) throw new LocationError('The file extension may only contain letters, digits, "-" and "_", e.g. .java');
+        if (!/^\.[A-Za-z0-9_-]+$/.test(ext)) throw new LocationError('Extension may only contain letters, digits, "-" and "_", e.g. .java');
         if (!name.toLowerCase().endsWith(ext.toLowerCase())) name += ext;
       }
     }

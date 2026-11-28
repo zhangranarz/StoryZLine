@@ -54,18 +54,18 @@ Instead of typing Bitbucket details, keep them in an Excel sheet. The first shee
 One row per repository. An empty **Bitbucket URL** or **Project key** cell means "same as the row above", so you only need to write them once (merged cells work too). **Download template** in Settings gives you a CSV to start from.
 
 1. In the **⚙ Settings** tab, click **Load Excel list…** and choose the `.xlsx` (or `.csv`) file. It is read in your browser only, and remembered there until you click **Forget list**. The **Bitbucket URL** is filled in from it (a dropdown if the sheet has several; **Other URL…** to type one).
-2. In the **eComm API** tab, fill in the **Endpoint parts**:
+2. In the **eComm API** tab, fill in the **Endpoint** box:
 
    | Part | Input |
    |---|---|
-   | Bitbucket URL | filled in from Settings |
-   | Project key, Repository | dropdowns from the sheet, Repository narrowed by Project key; **Other…** to type a value (plain text boxes without a sheet) |
+   | URL | the Bitbucket URL, filled in from Settings |
+   | Project, Repository | dropdowns from the sheet, Repository narrowed by Project; **Other…** to type a value (plain text boxes without a sheet) |
    | Path | text |
-   | File name | text |
-   | File extension | dropdown: `.java` (default), `.xml`, `.properties`, `.yml`, `.yaml`, `.json`, `.sql`, `.wsdl`, `.xsd`, `.kt`, `.groovy`, `.gradle`, `.jsp`, `.txt`, *(no extension)*, or **Other…** to type one; added unless the file name already ends with it |
+   | File | the file name, text |
+   | Extension | dropdown: `.java` (default), `.xml`, `.properties`, `.yml`, `.yaml`, `.json`, `.sql`, `.wsdl`, `.xsd`, `.kt`, `.groovy`, `.gradle`, `.jsp`, `.txt`, *(no extension)*, or **Other…** to type one; added unless File already ends with it |
 
-3. **Endpoint** shows the joined Bitbucket file URL and updates as you change the parts. You can edit it before pulling:
-   `Bitbucket URL /projects/ Project key /repos/ Repository /browse/ Path / File name File extension`
+3. The **Endpoint** field below the box shows the joined Bitbucket file URL and updates as you change the parts. You can edit it before pulling:
+   `URL /projects/ Project /repos/ Repository /browse/ Path / File Extension`
 
    No branch is added, so Bitbucket uses the repository's default branch. To pull another branch, add `?at=<branch>` to the end of the Endpoint yourself.
 4. Click **Pull from Bitbucket** (or press Enter).
