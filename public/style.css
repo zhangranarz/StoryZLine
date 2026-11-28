@@ -51,8 +51,6 @@ select:disabled { opacity: .6; }
 .endpoint { margin: 0 0 12px; padding: 12px 14px 4px; border: 1px solid var(--border); border-radius: 8px; }
 .endpoint legend { padding: 0 6px; font-weight: 600; color: var(--muted); font-size: 13px; }
 .endpoint select:not([hidden]) + input:not([hidden]) { margin-top: 8px; }
-.grid .span2 { grid-column: span 2; }
-@media (max-width: 640px) { .grid .span2 { grid-column: auto; } }
 input[readonly] { color: var(--muted); background: transparent; }
 #conn-url-select:not([hidden]) + #conn-url:not([hidden]) { margin-top: 8px; }
 small { font-weight: 400; }

@@ -13,7 +13,8 @@ const store = {
   json(k) { try { return JSON.parse(this.get(k) || 'null'); } catch { return null; } },
 };
 // Login fields remembered between visits. The password is deliberately not in this list.
-const CONN_FIELDS = { baseUrl: 'conn-url', user: 'conn-user', project: 'conn-project', repo: 'conn-repo', branch: 'conn-branch' };
+const CONN_FIELDS = { baseUrl: 'conn-url', user: 'conn-user', project: 'conn-project', repo: 'conn-repo' };
+store.remove('branch');  // no longer used: the Endpoint has no ?at= branch unless typed into it
 
 $('api').value = store.get('api');
 $('location').value = store.get('location');
@@ -76,7 +77,7 @@ function updateState() {
     $('login-summary').innerHTML = '<span class="warn">No Bitbucket server set yet.</span>' + settingsLink('Open Settings');
     return;
   }
-  const repo = c.project && c.repo ? ` · ${esc(c.project)}/${esc(c.repo)}${c.branch ? ' @ ' + esc(c.branch) : ''}` : '';
+  const repo = c.project && c.repo ? ` · ${esc(c.project)}/${esc(c.repo)}` : '';
   const login = loggedIn ? `logged in as <b>${esc(c.user)}</b>`
     : !c.user || !c.password ? '<span class="warn">not logged in</span>'
     : 'login not checked yet';
@@ -94,7 +95,7 @@ for (const id of ['conn-url', 'conn-user', 'conn-pass']) {
 // Remember the URL and user ID as they are typed (never the password).
 $('conn-url').addEventListener('input', () => store.set('baseUrl', $('conn-url').value.trim()));
 $('conn-user').addEventListener('input', () => store.set('user', $('conn-user').value.trim()));
-for (const id of ['conn-project', 'conn-repo', 'conn-branch']) $(id).addEventListener('input', updateState);
+for (const id of ['conn-project', 'conn-repo']) $(id).addEventListener('input', updateState);
 updateState();
 
 async function post(url, body) {
@@ -249,14 +250,15 @@ $('download').addEventListener('click', () => {
 });
 
 // ---- Endpoint parts and the Excel list ------------------------------------------------
-// The Endpoint is joined from: Bitbucket URL (Settings) / Project key / Repository / Branch /
-// Path / File name / File extension. With an Excel list loaded, project, repository and branch
-// become dropdowns (plus "Other…" to type a value), and its "Endpoint Java file location"
-// values are offered for Path. The list (no passwords) and the parts are remembered in this browser.
+// The Endpoint is joined from: Bitbucket URL (Settings) / Project key / Repository / Path /
+// File name / File extension, with no ?at= branch (Bitbucket then shows the default branch).
+// With an Excel list loaded, project and repository become dropdowns (plus "Other…" to type a
+// value), and its "Endpoint Java file location" values are offered for Path.
+// The list (no passwords) and the parts are remembered in this browser.
 
 const XL = window.StoryZExcel;
-const LEVELS = ['project', 'repo', 'branch'];                // narrowed in this order
-const INPUT = { project: 'conn-project', repo: 'conn-repo', branch: 'conn-branch' };
+const LEVELS = ['project', 'repo'];                          // narrowed in this order
+const INPUT = { project: 'conn-project', repo: 'conn-repo' };
 const OTHER = '__other__';
 let pickEntries = [];
 let pickColumns = [];
@@ -353,7 +355,6 @@ function endpointParts() {
     baseUrl: $('conn-url').value.trim(),
     project: $('conn-project').value,
     repo: $('conn-repo').value,
-    branch: $('conn-branch').value,
     path: $('pick-path').value,
     fileName: $('pick-name').value,
     extension: $('pick-ext').value,

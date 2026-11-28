@@ -32,7 +32,7 @@
         </label>
         <fieldset class="endpoint">
           <legend>Endpoint parts</legend>
-          <div class="grid three">
+          <div class="grid">
             <label class="wide">
               <span>Bitbucket URL <small class="muted">(from <button type="button" class="link" data-tab="settings">Settings</button>)</small></span>
               <input id="ep-base" readonly tabindex="-1" placeholder="Set the Bitbucket URL in Settings">
@@ -47,17 +47,12 @@
               <select id="pick-repo" data-other-for="conn-repo" hidden></select>
               <input id="conn-repo" placeholder="ecomm-api" autocomplete="off">
             </label>
-            <label>
-              <span>Branch <small class="muted">(optional)</small></span>
-              <select id="pick-branch" data-other-for="conn-branch" hidden></select>
-              <input id="conn-branch" placeholder="default branch" autocomplete="off">
-            </label>
             <label class="wide">
               <span>Path</span>
               <input id="pick-path" list="path-list" placeholder="src/main/java/com/yourcompany/ecomm/enq" autocomplete="off">
               <datalist id="path-list"></datalist>
             </label>
-            <label class="span2">
+            <label>
               <span>File name</span>
               <input id="pick-name" placeholder="PortfolioEndpoint" autocomplete="off">
             </label>
@@ -132,7 +127,7 @@
             <span id="pick-state" class="state"></span>
             <span id="pick-status" role="status"></span>
           </div>
-          <p class="note">Excel columns: <b>Bitbucket URL</b>, <b>Project key</b>, <b>Repository</b>, <b>Branch</b>, <b>Endpoint Java file location</b> (first sheet, .xlsx or .csv). The Bitbucket URL below is filled in from the list; project keys, repositories, branches and paths are offered in the eComm API tab. The file is read in this browser only.</p>
+          <p class="note">Excel columns: <b>Bitbucket URL</b>, <b>Project key</b>, <b>Repository</b>, <b>Branch</b>, <b>Endpoint Java file location</b> (first sheet, .xlsx or .csv). The Bitbucket URL below is filled in from the list; project keys, repositories and paths are offered in the eComm API tab. The file is read in this browser only.</p>
         </div>
         <div class="grid">
           <label class="wide">

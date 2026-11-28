@@ -57,13 +57,15 @@ Instead of typing locations, keep them in an Excel sheet. The first sheet needs 
    | Part | Input |
    |---|---|
    | Bitbucket URL | filled in from Settings |
-   | Project key, Repository, Branch | dropdowns from the sheet, each narrowed by the ones before it; **Other…** to type a value (plain text boxes without a sheet) |
+   | Project key, Repository | dropdowns from the sheet, Repository narrowed by Project key; **Other…** to type a value (plain text boxes without a sheet) |
    | Path | text; the sheet's *Endpoint Java file location* values are suggested, and the first one is filled in while Path is empty |
    | File name | text |
    | File extension | text with suggestions (`.java`, `.xml`, `.properties`, `.yml`, …); added unless the file name already ends with it |
 
 3. **Endpoint** shows the joined Bitbucket file URL and updates as you change the parts. You can edit it before pulling:
-   `Bitbucket URL /projects/ Project key /repos/ Repository /browse/ Path / File name File extension ?at= Branch`
+   `Bitbucket URL /projects/ Project key /repos/ Repository /browse/ Path / File name File extension`
+
+   No branch is added, so Bitbucket uses the repository's default branch. To pull another branch, add `?at=<branch>` to the end of the Endpoint yourself.
 4. Click **Pull from Bitbucket** (or press Enter).
 
 Old `.xls` files aren't supported. In Excel, use *File > Save As > Excel Workbook (.xlsx)* or CSV.
