@@ -146,6 +146,14 @@ pre { margin: 0; overflow: auto; max-height: 75vh; background: var(--code-bg); f
 .rf-note.bad { color: var(--err); font-style: normal; font-weight: 600; }
 .rf-check { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 .rf-check table { margin-top: 4px; }
+.rf-check > summary { cursor: pointer; list-style: none; margin-bottom: 0; }
+.rf-check > summary::-webkit-details-marker { display: none; }
+.rf-check > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.rf-check:not([open]) > summary .rf-toggle::after { content: "Expand"; }
+.rf-check > summary:hover .rf-toggle { color: var(--accent); border-color: var(--accent); }
+.rf-found { font-size: 12px; font-weight: 600; }
+.rf-found.ok { color: var(--ok); }
+.rf-found.bad { color: var(--err); }
 .rf-check td:first-child { width: 1.5em; font-weight: 700; }
 .rf-check tr.ok td:first-child { color: var(--ok); }
 .rf-check tr.bad td:first-child { color: var(--err); }

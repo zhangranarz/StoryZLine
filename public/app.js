@@ -870,7 +870,7 @@ function drawRouteFlow() {
     return m ? ` <a href="#" class="rf-link" data-pane="${m.key}" data-line="${m.declLine}">→ ${m.label} ${esc(m.name)}()</a>` : '';
   };
   let steps = 0, followed = 0, missing = 0;
-  // Reference check: every route reference (direct:/seda:/vm: call) once, with where it was found.
+  // Reference list: every route reference (direct:/seda:/vm: call) and bean once, with where it was found.
   const refs = new Map();
   const check = (s, hit) => {
     const uri = s.target.split('?')[0];
@@ -962,9 +962,13 @@ function referenceCheck(refs, at, how) {
     const ok = h && !r.missing;
     return `<tr class="${ok ? 'ok' : 'bad'}"><td>${ok ? '✓' : '✗'}</td><td><code>${esc(r.uri)}</code></td><td>${at(r.from.file, r.from.line)}</td><td>${where}</td></tr>`;
   });
-  return `<div class="rf-check"><div class="rf-head">Reference check</div><div class="table-wrap"><table>` +
-    `<thead><tr><th></th><th>Reference</th><th>Called at</th><th>Found</th></tr></thead><tbody>${rows.join('')}</tbody></table></div></div>`;
+  // Collapsible like the followed routes (hidden at first); the heading keeps the count in view.
+  const found = refs.filter(r => r.hit && !r.missing).length;
+  return `<details class="rf-check"${referenceOpen ? ' open' : ''}><summary class="rf-head">Reference ` +
+    `<span class="rf-toggle" aria-hidden="true"></span> <span class="rf-found${found === refs.length ? ' ok' : ' bad'}">${found} of ${refs.length} found</span></summary>` +
+    `<div class="table-wrap"><table><thead><tr><th></th><th>Reference</th><th>Called at</th><th>Found</th></tr></thead><tbody>${rows.join('')}</tbody></table></div></details>`;
 }
+let referenceOpen = false;  // the Reference list: hidden until the user expands it (kept while the page is open)
 
 // Shows a line in a code pane (the whole file if the line is outside the found sections) and flashes it.
 function jumpTo(key, line, file) {
@@ -1011,6 +1015,7 @@ const routeKey = r => `${view.routeFiles[r.file] ? (view.routeFiles[r.file].loc 
 // "toggle" doesn't bubble: listen while it goes down.
 $('route-flow').addEventListener('toggle', e => {
   const d = e.target;
+  if (d.matches && d.matches('details.rf-check')) { referenceOpen = d.open; drawRouteFlowButtons(); return; }
   if (!d.matches || !d.matches('details.rf-sub')) return;
   for (const same of $('route-flow').querySelectorAll(`details.rf-sub[data-key="${CSS.escape(d.dataset.key)}"]`)) {
     if (same.open !== d.open) same.open = d.open;  // the same route followed from elsewhere
@@ -1019,16 +1024,16 @@ $('route-flow').addEventListener('toggle', e => {
   drawRouteFlowButtons();
 }, true);
 
-// Expand all / Hide all, in the card's title; only when there are followed routes.
+// Expand all / Hide all, in the card's title: the followed routes and the Reference list.
 function drawRouteFlowButtons() {
-  const subs = [...$('route-flow').querySelectorAll('details.rf-sub')];
+  const subs = [...$('route-flow').querySelectorAll('details.rf-sub, details.rf-check')];
   $('rf-expand-all').hidden = $('rf-hide-all').hidden = !subs.length;
   $('rf-expand-all').disabled = subs.every(d => d.open);
   $('rf-hide-all').disabled = subs.every(d => !d.open);
 }
 for (const [id, open] of [['rf-expand-all', true], ['rf-hide-all', false]]) {
   $(id).addEventListener('click', () => {
-    for (const d of $('route-flow').querySelectorAll('details.rf-sub')) d.open = open;
+    for (const d of $('route-flow').querySelectorAll('details.rf-sub, details.rf-check')) d.open = open;
   });
 }
 
