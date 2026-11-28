@@ -25,7 +25,11 @@
     <section id="panel-api" class="panel" role="tabpanel" aria-labelledby="tab-api">
       <form id="form" class="card">
         <div id="login-summary" class="summary"></div>
-        <!-- API, Endpoint and Controller sections, built from #part-template -->
+        <label>
+          <span>API</span>
+          <input id="api" name="api" placeholder="/spl-banking/enq/customer/portfolio/12345" autocomplete="off">
+        </label>
+        <!-- Endpoint and Controller sections, built from #part-template -->
         <div id="sections"></div>
         <div class="actions">
           <button id="go" type="submit">Pull from Bitbucket</button>
@@ -38,7 +42,7 @@
           <div class="card-title">Flow <span id="flow-state" class="state"></span></div>
           <div class="table-wrap">
             <table id="flow">
-              <thead><tr><th>HTTP</th><th>Path</th><th>API</th><th>Endpoint</th><th>Controller</th></tr></thead>
+              <thead><tr><th>HTTP</th><th>Path</th><th>Match</th><th>Endpoint</th><th>Controller</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>

@@ -1,6 +1,6 @@
 # StoryZLine
 
-A small local web tool for tracing an eComm API through its code. Give it the locations of three Java files in Bitbucket, the **API** interface, the **Endpoint** and the **Controller**, and it pulls all three and matches them together: each API method, the Endpoint method that serves it, and the Controller method(s) that Endpoint calls.
+A small local web tool for tracing an eComm API through its code. Type the **API** path and give it the locations of two Java files in Bitbucket, the **Endpoint** and the **Controller**. It pulls both and follows the API: the Endpoint method(s) mapped to that path, and the Controller method(s) they call.
 
 ## Setup
 
@@ -18,7 +18,7 @@ If your company uses its own TLS certificate authority, start Node with `NODE_EX
 
 ## Try it without Bitbucket
 
-`samples/` holds a demo API interface, Endpoint and Controller (plus a JAX-RS example) and `tools/mock_bitbucket.py`, a pretend Bitbucket that serves them (Python only). See [samples/README.md](samples/README.md) for the steps.
+`samples/` holds a demo Endpoint and Controller (plus a JAX-RS example) and `tools/mock_bitbucket.py`, a pretend Bitbucket that serves them (Python only). See [samples/README.md](samples/README.md) for the steps.
 
 ## Running on another computer
 
@@ -58,7 +58,7 @@ Instead of typing Bitbucket details, keep them in an Excel sheet. The first shee
 One row per repository. An empty **Bitbucket URL** or **Project key** cell means "same as the row above", so you only need to write them once (merged cells work too). **Download** in Settings gives you a template CSV to start from.
 
 1. In the **⚙ Settings** tab, click **Load** and choose the `.xlsx` (or `.csv`) file. It is read in your browser only, and remembered there until you click **Forget**. The **Bitbucket URL** is filled in from it (a dropdown if the sheet has several; **Other URL…** to type one).
-2. In the **eComm** tab, fill in the **API**, **Endpoint** and **Controller** boxes. Each has the same parts:
+2. In the **eComm** tab, type the **API** path and fill in the **Endpoint** and **Controller** boxes. Both have the same parts:
 
    | Part | Input |
    |---|---|
@@ -83,14 +83,12 @@ Each box's file URL (built from its parts, or typed/pasted) can be any of:
 - A Bitbucket Cloud URL: `https://bitbucket.org/<workspace>/<repo>/src/<branch>/<path>`
 - A plain path inside that box's Project and Repository: `src/main/java/.../PortfolioEndpoint.java`
 
-## How the three files are matched
+## How the API, Endpoint and Controller are matched
 
-- **API**: every method in the API file with a Spring (`@RequestMapping`, `@GetMapping`, …) or JAX-RS (`@Path`, `@GET`, …) mapping is one row. Class and method paths are joined.
-- **API → Endpoint**: the Endpoint method with the same mapping path (and a compatible HTTP method; `{variables}` may be named differently). If there is none, the Endpoint method with the same name, as when the Endpoint implements the API interface without repeating its annotations. The table says which (*same path* / *same method name*).
+- **API → Endpoint**: the API path or full URL, e.g. `/spl-banking/enq/customer/portfolio/12345`, is matched against the Endpoint's Spring (`@RequestMapping`, `@GetMapping`, …) and JAX-RS (`@Path`, `@GET`, …) mappings, with class and method paths joined. A context-path prefix (`/spl-banking`), `{path}` variables and a query string are allowed for. Each matching Endpoint method is one row, marked **Exact match** or **Matches end of API**. With no API, every mapping in the Endpoint is a row.
 - **Endpoint → Controller**: calls inside that Endpoint method on a field, parameter or variable whose type is the Controller class (e.g. `controller.savePortfolio(…)`). If the Endpoint has no such field, calls to any method the Controller has. One Endpoint method can lead to several Controller methods.
-- Without an API file, the rows start from the Endpoint's own mappings.
 
-After **Pull from Bitbucket**, the **Flow** table lists the rows. Click a row (or use the arrow keys) to show its three methods in the code panes below: each pane shows only the matching method(s), from the comments and annotations above down to the closing `}`, with the declaration and the Controller calls highlighted. **Show whole file** switches a pane to the complete file; **Copy** copies what the pane shows.
+After **Pull from Bitbucket**, the **Flow** table lists the rows. Click a row (or use the arrow keys) to show its methods in the code panes below: each pane shows only the matching method(s), from the comments and annotations above down to the closing `}`, with the declaration and the Controller calls highlighted. **Show whole file** switches a pane to the complete file; **Copy** copies what the pane shows. If no mapping matches the API, the whole Endpoint file is shown.
 
 ## Security
 

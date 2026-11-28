@@ -254,8 +254,10 @@ const section = m => m && { name: m.name || m.methodName, declLine: m.declLine, 
 //                      method), else one with the same name (an implementation of the interface).
 //   Endpoint -> Controller: calls inside that Endpoint method on a field or variable of the
 //                      Controller's type; with no such field, calls to any method the Controller has.
-// Returns { rows, classes }. Each row: { methods, paths, api, endpoint, controller[], callLines[] }.
-function linkFlows(apiSrc, endpointSrc, controllerSrc) {
+// apiPath (optional, used when there is no API file): only Endpoint mappings matching this eComm
+// API path become rows, each with match 'exact' or 'suffix' (see matchEndpoints).
+// Returns { rows, classes }. Each row: { methods, paths, match, api, endpoint, controller[], callLines[] }.
+function linkFlows(apiSrc, endpointSrc, controllerSrc, apiPath) {
   const classes = { api: apiSrc && typeName(apiSrc), endpoint: endpointSrc && typeName(endpointSrc), controller: controllerSrc && typeName(controllerSrc) };
   const apiEps = apiSrc ? findEndpoints(apiSrc) : [];
   const epEps = endpointSrc ? findEndpoints(endpointSrc) : [];
@@ -275,6 +277,14 @@ function linkFlows(apiSrc, endpointSrc, controllerSrc) {
   if (apiSrc) {
     starts = apiEps.map(e => ({ methods: e.methods, paths: e.paths, api: e }));
     if (!starts.length) starts = findMethods(apiSrc).filter(x => x.name !== classes.api).map(x => ({ methods: [], paths: [], api: { ...x, methodName: x.name } }));
+  } else if (normaliseApi(apiPath)) {
+    // One row per matching Endpoint method, with the paths that matched.
+    starts = [];
+    for (const m of matchEndpoints(epEps, apiPath)) {
+      const same = starts.find(s => s.endpointEp.declLine === m.declLine);
+      if (same) { if (!same.paths.includes(m.path)) same.paths.push(m.path); }
+      else starts.push({ methods: m.methods, paths: [m.path], match: m.match, endpointEp: m });
+    }
   } else {
     starts = epEps.map(e => ({ methods: e.methods, paths: e.paths, endpointEp: e }));
     if (!starts.length) starts = epMethods.filter(x => x.name !== classes.endpoint).map(x => ({ methods: [], paths: [], endpointMethod: x }));
@@ -311,6 +321,7 @@ function linkFlows(apiSrc, endpointSrc, controllerSrc) {
     return {
       methods: s.methods,
       paths: s.paths,
+      match: s.match || null,
       api: section(s.api),
       endpoint: endpoint && { ...section(endpoint), how },
       controller,

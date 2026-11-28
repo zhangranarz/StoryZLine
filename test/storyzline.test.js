@@ -493,7 +493,6 @@ test('mock Bitbucket serves the demo files through server.py', { skip: !python &
 // ---- Matching API -> Endpoint -> Controller ----
 
 const { linkFlows, findMethods } = require('../public/shared/java');
-const API_FILE = 'ecomm-services/src/main/java/com/example/ecomm/enq/api/CustomerPortfolioApi.java';
 const CTL_FILE = 'ecomm-services/src/main/java/com/example/ecomm/enq/controller/CustomerPortfolioController.java';
 const flowText = r => `${r.methods.join('|')} ${r.paths.join(',')} | ${r.api ? r.api.name : '-'} -> ` +
   `${r.endpoint ? `${r.endpoint.name}${r.endpoint.how ? ` (${r.endpoint.how})` : ''}` : '-'} -> ${r.controller.map(c => c.name).join('+') || '-'}`;
@@ -517,28 +516,29 @@ test('findMethods finds declarations, not calls, ifs or object creation', () => 
   assert.deepStrictEqual(findMethods(src).map(m => `${m.name} ${m.startLine}-${m.endLine}`), ['list 3-9', 'later 10-10']);
 });
 
-test('the demo API, Endpoint and Controller link end to end', () => {
-  const { rows, classes } = linkFlows(sample(API_FILE), sample(SPRING), sample(CTL_FILE));
-  assert.deepStrictEqual(classes, { api: 'CustomerPortfolioApi', endpoint: 'CustomerPortfolioEndpoint', controller: 'CustomerPortfolioController' });
-  assert.deepStrictEqual(rows.map(flowText), [
-    'GET /enq/customer/portfolio/{customerId} | getPortfolio -> getPortfolio (same path) -> getPortfolio',
-    'POST /enq/customer/portfolio/{customerId} | updatePortfolio -> updatePortfolio (same path) -> validate+savePortfolio',
-    'GET /enq/customer/summary | summary -> summary (same path) -> summary',
-    'DELETE /enq/customer/portfolio/{customerId}/holdings/{holdingId} | removeHolding -> removeHolding (same path) -> removeHolding',
-    'GET /enq/customer/portfolio/{customerId}/export | exportPortfolio -> exportPortfolio (same method name) -> exportCsv',
+test('the API path leads through the demo Endpoint to the Controller', () => {
+  const flow = api => linkFlows(null, sample(SPRING), sample(CTL_FILE), api);
+  const text = r => `${r.match} ${flowText(r)}`;
+  assert.deepStrictEqual(flow('/spl-banking/enq/customer/portfolio/12345').rows.map(text), [
+    'suffix GET /enq/customer/portfolio/{customerId} | - -> getPortfolio -> getPortfolio',
+    'suffix POST /enq/customer/portfolio/{customerId} | - -> updatePortfolio -> validate+savePortfolio',
   ]);
+  assert.deepStrictEqual(flow('/enq/customer/overview').rows.map(text), ['exact GET|POST /enq/customer/overview | - -> summary -> summary']);
+  assert.deepStrictEqual(flow('/enq/customer/unknown').rows, []);
+  assert.strictEqual(flow('').rows.length, 4);  // no API: every mapping in the Endpoint
+
   // Sections cover the whole method; the Endpoint's controller calls are marked, not audit.log().
+  const get = flow('/enq/customer/portfolio/1').rows[0];
   const epLines = sample(SPRING).split(/\r?\n/);
-  const get = rows[0];
   assert.match(epLines[get.endpoint.startLine - 1], /^ {4}\/\*\*/);
   assert.match(epLines[get.endpoint.endLine - 1], /^ {4}\}$/);
   assert.deepStrictEqual(get.callLines.map(n => epLines[n - 1].trim()), ['return ResponseEntity.ok(controller.getPortfolio(customerId, currency));']);
   const ctlLines = sample(CTL_FILE).split(/\r?\n/);
-  assert.match(ctlLines[rows[4].controller[0].startLine - 1], /CSV export/);
+  assert.match(ctlLines[get.controller[0].startLine - 1], /Loads a portfolio/);
 });
 
 test('linking without an API file, without a typed Controller field, and with gaps', () => {
-  // No API file: rows start from the Endpoint's mappings.
+  // No API file or path: rows start from all of the Endpoint's mappings.
   const noApi = linkFlows(null, sample(SPRING), sample(CTL_FILE)).rows.map(flowText);
   assert.strictEqual(noApi.length, 4);
   assert.strictEqual(noApi[1], 'POST /enq/customer/portfolio/{customerId} | - -> updatePortfolio -> validate+savePortfolio');

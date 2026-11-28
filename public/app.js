@@ -273,10 +273,13 @@ if (!store.json('part.endpoint') && (store.json('endpointParts') || store.get('p
   const old = store.json('endpointParts') || {};
   store.set('part.endpoint', JSON.stringify({ ...old, project: store.get('project'), repo: store.get('repo') }));
 }
-for (const k of ['endpointParts', 'project', 'repo', 'location', 'api', 'branch', 'pickChoice']) store.remove(k);
+for (const k of ['endpointParts', 'project', 'repo', 'location', 'branch', 'pickChoice', 'part.api']) store.remove(k);
+
+// The eComm API path picks the Endpoint method(s) to follow.
+$('api').value = store.get('api');
+$('api').addEventListener('input', () => store.set('api', $('api').value.trim()));
 
 const parts = [
-  new Part('api', 'API', 'CustomerPortfolioApi'),
   new Part('endpoint', 'Endpoint', 'CustomerPortfolioEndpoint'),
   new Part('controller', 'Controller', 'CustomerPortfolioController'),
 ];
@@ -384,7 +387,7 @@ $('pick-clear').addEventListener('click', () => {
   setPickStatus('List forgotten. Load another Excel file any time.');
 });
 
-// ---- Pull the files and match API -> Endpoint -> Controller ----
+// ---- Pull the files and follow API path -> Endpoint -> Controller ----
 
 let view = null;  // { files, flows, selected, panes, whole }
 
@@ -400,7 +403,7 @@ $('form').addEventListener('submit', async e => {
   }
   const chosen = parts.filter(p => p.url);
   if (!chosen.length) {
-    setStatus('Fill in File in at least one of API, Endpoint and Controller.', true);
+    setStatus('Fill in File in the Endpoint (and Controller) box.', true);
     parts[0].$('file').focus();
     return;
   }
@@ -424,7 +427,7 @@ $('form').addEventListener('submit', async e => {
     if (ok.length) loggedIn = true;
     if (results.some(r => r.status === 401)) loggedIn = false;
     updateState();
-    render(results);
+    render(results, $('api').value.trim());
     const failed = results.filter(r => r.error);
     setStatus(failed.length
       ? `Pulled ${ok.length} of ${results.length} files. ${failed.map(r => `${r.part.label}: ${r.error}`).join(' ')}`
@@ -434,29 +437,31 @@ $('form').addEventListener('submit', async e => {
   }
 });
 
-function render(results) {
+function render(results, apiPath) {
   const files = Object.fromEntries(results.map(r => [r.part.key, r]));
   const src = k => (files[k] && files[k].content != null ? files[k].content : null);
-  const flows = Java.linkFlows(src('api'), src('endpoint'), src('controller'));
+  const flows = Java.linkFlows(null, src('endpoint'), src('controller'), apiPath);
   view = { files, flows, selected: 0, panes: {}, whole: {} };
   $('result').hidden = false;
 
   const name = m => (m ? `${esc(m.name)}()` : '<span class="none">—</span>');
+  const match = r => (r.match ? `<span class="pill ${r.match}">${r.match === 'exact' ? 'Exact match' : 'Matches end of API'}</span>` : '<span class="none">—</span>');
   $('flow').querySelector('tbody').innerHTML = flows.rows.map((r, i) => `
     <tr data-row="${i}" tabindex="0">
       <td>${esc(r.methods.join(', ')) || '<span class="none">—</span>'}</td>
       <td>${r.paths.map(p => `<code>${esc(p)}</code>`).join('<br>') || '<span class="none">—</span>'}</td>
-      <td>${src('api') != null ? name(r.api) : '<span class="none">not pulled</span>'}</td>
-      <td>${src('endpoint') != null ? name(r.endpoint) + (r.endpoint && r.endpoint.how ? ` <small>(${esc(r.endpoint.how)})</small>` : '') : '<span class="none">not pulled</span>'}</td>
+      <td>${match(r)}</td>
+      <td>${src('endpoint') != null ? name(r.endpoint) : '<span class="none">not pulled</span>'}</td>
       <td>${src('controller') != null ? (r.controller.map(c => `${esc(c.name)}()`).join(', ') || '<span class="none">—</span>') : '<span class="none">not pulled</span>'}</td>
-    </tr>`).join('') || '<tr><td colspan="5" class="none">No methods found to match.</td></tr>';
+    </tr>`).join('') || `<tr><td colspan="5" class="none">${apiPath ? 'No Endpoint mapping matches this API.' : 'No mappings found in the Endpoint.'}</td></tr>`;
 
   const linked = flows.rows.filter(r => r.endpoint && r.controller.length).length;
-  $('flow-state').textContent = flows.rows.length ? `${flows.rows.length} row${flows.rows.length === 1 ? '' : 's'}, ${linked} linked end to end` : '';
+  $('flow-state').textContent = flows.rows.length ? `${flows.rows.length} row${flows.rows.length === 1 ? '' : 's'}, ${linked} linked to the Controller` : '';
   $('flow-state').className = 'state' + (linked ? ' ok' : '');
   const notes = [];
-  if (src('api') == null && src('endpoint') != null) notes.push('No API file: the rows start from the Endpoint\'s mappings.');
-  if (src('controller') != null && src('endpoint') != null && !flows.rows.some(r => r.controller.length)) {
+  if (!apiPath && src('endpoint') != null) notes.push('No API given: listing every mapping in the Endpoint.');
+  if (apiPath && src('endpoint') != null && !flows.rows.length) notes.push('Showing the whole Endpoint file.');
+  if (src('controller') != null && src('endpoint') != null && flows.rows.length && !flows.rows.some(r => r.controller.length)) {
     notes.push(`No calls to ${flows.classes.controller || 'the Controller'} were found in the Endpoint methods.`);
   }
   $('flow-note').textContent = notes.join(' ');
