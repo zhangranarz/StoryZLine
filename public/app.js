@@ -20,7 +20,7 @@ $('api').value = store.get('api');
 $('location').value = store.get('location');
 for (const [k, id] of Object.entries(CONN_FIELDS)) $(id).value = store.get(k);
 
-// ---- Tabs: "eComm API" (pull a file) and "Settings" (Bitbucket login, Excel list) ----
+// ---- Tabs: "eComm" (pull a file) and "Settings" (Bitbucket login, Excel list) ----
 
 const TABS = ['api', 'settings'];
 
@@ -40,7 +40,7 @@ $('tab-api').parentElement.addEventListener('keydown', e => {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   showTab($('tab-api').getAttribute('aria-selected') === 'true' ? 'settings' : 'api', true);
 });
-// Links such as "Open Settings" in the eComm API tab.
+// Links such as "Open Settings" in the eComm tab.
 document.addEventListener('click', e => {
   const link = e.target.closest('[data-tab]');
   if (link) showTab(link.dataset.tab);
@@ -71,7 +71,7 @@ function updateState() {
   else if (!c.baseUrl || !c.user || !c.password) { el.textContent = 'not logged in'; el.className = 'state'; }
   else { el.textContent = 'not checked yet'; el.className = 'state'; }
 
-  // One-line summary of the Settings at the top of the eComm API tab.
+  // One-line summary of the Settings at the top of the eComm tab.
   const settingsLink = label => ` <button type="button" class="link" data-tab="settings">${label}</button>`;
   if (!c.baseUrl) {
     $('login-summary').innerHTML = '<span class="warn">No Bitbucket server set yet.</span>' + settingsLink('Open Settings');
