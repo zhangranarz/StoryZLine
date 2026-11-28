@@ -19,6 +19,35 @@ $('api').value = store.get('api');
 $('location').value = store.get('location');
 for (const [k, id] of Object.entries(CONN_FIELDS)) $(id).value = store.get(k);
 
+// ---- Tabs: "eComm API" (pull a file) and "Settings" (Bitbucket login, Excel list) ----
+
+const TABS = ['api', 'settings'];
+
+function showTab(name, focusTab = false) {
+  for (const t of TABS) {
+    const on = t === name;
+    $('tab-' + t).setAttribute('aria-selected', String(on));
+    $('tab-' + t).tabIndex = on ? 0 : -1;
+    $('panel-' + t).hidden = !on;
+  }
+  if (focusTab) $('tab-' + name).focus();
+}
+
+for (const t of TABS) $('tab-' + t).addEventListener('click', () => showTab(t));
+// Arrow keys switch tabs, as in a native tab bar.
+$('tab-api').parentElement.addEventListener('keydown', e => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  showTab($('tab-api').getAttribute('aria-selected') === 'true' ? 'settings' : 'api', true);
+});
+// Links such as "Open Settings" in the eComm API tab.
+document.addEventListener('click', e => {
+  const link = e.target.closest('[data-tab]');
+  if (link) showTab(link.dataset.tab);
+});
+
+// Start in Settings until a Bitbucket server and user ID have been entered once.
+showTab($('conn-url').value && $('conn-user').value ? 'api' : 'settings');
+
 // Fill any empty fields from .env defaults, if the server has them.
 fetch('/api/config').then(r => r.json()).then(c => {
   for (const [k, id] of Object.entries(CONN_FIELDS)) if (!$(id).value && c[k]) $(id).value = c[k];
@@ -40,6 +69,18 @@ function updateState() {
   if (loggedIn) { el.textContent = `✓ logged in as ${c.user}`; el.className = 'state ok'; }
   else if (!c.baseUrl || !c.user || !c.password) { el.textContent = 'not logged in'; el.className = 'state'; }
   else { el.textContent = 'not checked yet'; el.className = 'state'; }
+
+  // One-line summary of the Settings at the top of the eComm API tab.
+  const settingsLink = label => ` <button type="button" class="link" data-tab="settings">${label}</button>`;
+  if (!c.baseUrl) {
+    $('login-summary').innerHTML = '<span class="warn">No Bitbucket server set yet.</span>' + settingsLink('Open Settings');
+    return;
+  }
+  const repo = c.project && c.repo ? ` · ${esc(c.project)}/${esc(c.repo)}${c.branch ? ' @ ' + esc(c.branch) : ''}` : '';
+  const login = loggedIn ? `logged in as <b>${esc(c.user)}</b>`
+    : !c.user || !c.password ? '<span class="warn">not logged in</span>'
+    : 'login not checked yet';
+  $('login-summary').innerHTML = `Bitbucket: <b>${esc(c.baseUrl)}</b>${repo} · ${login} ·` + settingsLink('Settings');
 }
 
 function setConnStatus(text, isError = false) {
@@ -50,6 +91,11 @@ function setConnStatus(text, isError = false) {
 for (const id of ['conn-url', 'conn-user', 'conn-pass']) {
   $(id).addEventListener('input', () => { loggedIn = false; updateState(); });
 }
+// Remember the URL and user ID as they are typed (never the password).
+$('conn-url').addEventListener('input', () => store.set('baseUrl', $('conn-url').value.trim()));
+$('conn-user').addEventListener('input', () => store.set('user', $('conn-user').value.trim()));
+for (const id of ['conn-project', 'conn-repo', 'conn-branch']) $(id).addEventListener('input', updateState);
+updateState();
 
 async function post(url, body) {
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -70,7 +116,8 @@ $('conn').addEventListener('submit', async e => {
     if (problem) throw new Error(problem);
     loggedIn = true;
     setConnStatus('');
-    $('location').focus();
+    showTab('api');
+    $($('api').value ? 'location' : 'api').focus();
   } catch (err) {
     loggedIn = false;
     setConnStatus(err.message, true);
@@ -88,8 +135,10 @@ $('form').addEventListener('submit', async e => {
   store.set('location', location);
   const conn = connection();
   if (!conn.baseUrl || !conn.user || !conn.password) {
-    setStatus('Fill in the Bitbucket login above first.', true);
-    $(!conn.baseUrl ? 'conn-url' : !conn.user ? 'conn-user' : 'conn-pass').focus();
+    setStatus('');
+    showTab('settings');
+    setConnStatus(`Fill in the ${!conn.baseUrl ? 'Bitbucket URL' : !conn.user ? 'user ID' : 'password'} to pull files.`, true);
+    $(!conn.baseUrl ? ($('conn-url').hidden ? 'conn-url-select' : 'conn-url') : !conn.user ? 'conn-user' : 'conn-pass').focus();
     return;
   }
   for (const [k, id] of Object.entries(CONN_FIELDS)) store.set(k, conn[k]);
@@ -301,6 +350,7 @@ function refreshPicks() {
       store.set(k, sel.value);
     }
   }
+  updateState();
   updatePickUrl();
 }
 

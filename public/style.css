@@ -17,6 +17,17 @@ header { padding-top: 24px; }
 h1 { margin: 0; font-size: 24px; }
 .sub, .muted { color: var(--muted); }
 .sub { margin: 2px 0 8px; }
+.tabs { display: flex; gap: 4px; margin-top: 16px; border-bottom: 1px solid var(--border); }
+.tab { display: inline-flex; align-items: center; gap: 6px; margin-bottom: -1px; padding: 9px 16px; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; background: none; color: var(--muted); font-weight: 600; }
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { background: var(--card); color: var(--text); border-color: var(--border); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#tab-settings { margin-left: auto; }
+.icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.summary { margin: -4px 0 14px; font-size: 13px; color: var(--muted); }
+.summary b { color: var(--text); font-weight: 600; }
+.summary .warn { color: var(--err); font-weight: 600; }
+.link { padding: 0; border: none; background: none; color: var(--accent); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
 .card-title { font-weight: 600; font-size: 16px; margin-bottom: 12px; }
 .state { font-size: 13px; font-weight: 600; margin-left: 8px; color: var(--muted); }
 .state.ok { color: var(--ok); }

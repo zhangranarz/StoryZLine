@@ -10,102 +10,117 @@
   <header>
     <h1>StoryZLine</h1>
     <p class="sub">Pull an eCommAPI's EndPoint Java source from Bitbucket</p>
+    <div class="tabs" role="tablist" aria-label="StoryZLine">
+      <button id="tab-api" class="tab" role="tab" type="button" aria-controls="panel-api" aria-selected="true">eComm API</button>
+      <button id="tab-settings" class="tab" role="tab" type="button" aria-controls="panel-settings" aria-selected="false" tabindex="-1">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/>
+          <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>
+        </svg>
+        <span>Settings</span>
+      </button>
+    </div>
   </header>
 
   <main>
-    <form id="conn" class="card">
-      <div class="card-title">Bitbucket login <span id="conn-state" class="state"></span></div>
-      <div class="excel-bar">
+    <section id="panel-api" class="panel" role="tabpanel" aria-labelledby="tab-api">
+      <form id="form" class="card">
+        <div id="login-summary" class="summary"></div>
+        <label>
+          <span>eCommAPI</span>
+          <input id="api" name="api" placeholder="/spl-banking/enq/customer/portfolio" autocomplete="off">
+        </label>
+        <div id="build" class="grid" hidden>
+          <label class="wide"><span>Endpoint Java file location <small class="muted">(from the Excel list)</small></span><select id="pick-location"></select></label>
+          <label><span>Path <small class="muted">(added after the location)</small></span><input id="pick-path" placeholder="enq/customer" autocomplete="off"></label>
+          <label><span>File name</span><input id="pick-name" placeholder="PortfolioEndpoint.java" autocomplete="off"></label>
+          <p id="build-msg" class="note wide" hidden></p>
+        </div>
+        <label>
+          <span id="location-label">EndPoint Java file location</span>
+          <input id="location" name="location" required autocomplete="off"
+                 placeholder="Bitbucket file URL, or a path such as src/main/java/com/bank/PortfolioEndpoint.java">
+        </label>
         <div class="actions">
-          <label class="file-button">
-            <input id="pick-file" type="file" accept=".xlsx,.csv,.txt">
-            <span>Load Excel list…</span>
+          <button id="go" type="submit">Pull from Bitbucket</button>
+          <span id="status" role="status"></span>
+        </div>
+      </form>
+
+      <section id="result" hidden>
+        <div class="card meta">
+          <div class="meta-head">
+            <div>
+              <div id="file-name" class="file-name"></div>
+              <div id="file-where" class="muted"></div>
+            </div>
+            <div class="buttons">
+              <a id="open" target="_blank" rel="noopener">Open in Bitbucket</a>
+              <button id="copy" type="button">Copy</button>
+              <button id="download" type="button">Download</button>
+            </div>
+          </div>
+          <div id="match"></div>
+          <details id="eps">
+            <summary>Endpoints found in this file</summary>
+            <table><thead><tr><th>Method</th><th>Path</th><th>Java method</th><th>Line</th></tr></thead><tbody></tbody></table>
+          </details>
+        </div>
+        <div class="card code"><pre id="code"></pre></div>
+      </section>
+    </section>
+
+    <section id="panel-settings" class="panel" role="tabpanel" aria-labelledby="tab-settings" hidden>
+      <form id="conn" class="card">
+        <div class="card-title">Bitbucket login <span id="conn-state" class="state"></span></div>
+        <div class="excel-bar">
+          <div class="actions">
+            <label class="file-button">
+              <input id="pick-file" type="file" accept=".xlsx,.csv,.txt">
+              <span>Load Excel list…</span>
+            </label>
+            <button id="pick-template" type="button">Download template</button>
+            <button id="pick-clear" type="button" hidden>Forget list</button>
+            <span id="pick-state" class="state"></span>
+            <span id="pick-status" role="status"></span>
+          </div>
+          <p class="note">Excel columns: <b>Bitbucket URL</b>, <b>Project key</b>, <b>Repository</b>, <b>Branch</b>, <b>Endpoint Java file location</b> (first sheet, .xlsx or .csv). The Bitbucket URL below is filled in from the list. The file is read in this browser only.</p>
+        </div>
+        <div class="grid">
+          <label class="wide">
+            <span>Bitbucket URL <small id="conn-url-hint" class="muted"></small></span>
+            <select id="conn-url-select" hidden></select>
+            <input id="conn-url" required placeholder="https://bitbucket.yourcompany.com" autocomplete="url">
           </label>
-          <button id="pick-template" type="button">Download template</button>
-          <button id="pick-clear" type="button" hidden>Forget list</button>
-          <span id="pick-state" class="state"></span>
-          <span id="pick-status" role="status"></span>
+          <label>
+            <span>User ID</span>
+            <input id="conn-user" required autocomplete="username">
+          </label>
+          <label>
+            <span>Password</span>
+            <input id="conn-pass" type="password" required autocomplete="current-password" placeholder="Password or HTTP access token">
+          </label>
         </div>
-        <p class="note">Excel columns: <b>Bitbucket URL</b>, <b>Project key</b>, <b>Repository</b>, <b>Branch</b>, <b>Endpoint Java file location</b> (first sheet, .xlsx or .csv). The Bitbucket URL below is filled in from the list. The file is read in this browser only.</p>
-      </div>
-      <div class="grid">
-        <label class="wide">
-          <span>Bitbucket URL <small id="conn-url-hint" class="muted"></small></span>
-          <select id="conn-url-select" hidden></select>
-          <input id="conn-url" required placeholder="https://bitbucket.yourcompany.com" autocomplete="url">
-        </label>
-        <label>
-          <span>User ID</span>
-          <input id="conn-user" required autocomplete="username">
-        </label>
-        <label>
-          <span>Password</span>
-          <input id="conn-pass" type="password" required autocomplete="current-password" placeholder="Password or HTTP access token">
-        </label>
-      </div>
-      <div id="excel-picks" class="grid three" hidden>
-        <label><span>Project key</span><select id="pick-project"></select></label>
-        <label><span>Repository</span><select id="pick-repo"></select></label>
-        <label><span>Branch</span><select id="pick-branch"></select></label>
-      </div>
-      <p id="pick-empty" class="note" hidden></p>
-      <details id="defaults">
-        <summary>Default project / repo / branch (optional, lets you type plain file paths)</summary>
-        <div class="grid three">
-          <label><span>Project key</span><input id="conn-project" placeholder="ECOM" autocomplete="off"></label>
-          <label><span>Repository</span><input id="conn-repo" placeholder="ecomm-api" autocomplete="off"></label>
-          <label><span>Branch</span><input id="conn-branch" placeholder="develop" autocomplete="off"></label>
+        <div id="excel-picks" class="grid three" hidden>
+          <label><span>Project key</span><select id="pick-project"></select></label>
+          <label><span>Repository</span><select id="pick-repo"></select></label>
+          <label><span>Branch</span><select id="pick-branch"></select></label>
         </div>
-      </details>
-      <div class="actions">
-        <button id="login" type="submit">Log in</button>
-        <span id="conn-status" role="status"></span>
-      </div>
-      <p class="note">Your password goes only to this local server and on to Bitbucket. It is never saved; reloading the page clears it. The URL, user ID and defaults are remembered in this browser.</p>
-    </form>
-
-    <form id="form" class="card">
-      <label>
-        <span>eCommAPI</span>
-        <input id="api" name="api" placeholder="/spl-banking/enq/customer/portfolio" autocomplete="off">
-      </label>
-      <div id="build" class="grid" hidden>
-        <label class="wide"><span>Endpoint Java file location <small class="muted">(from the Excel list)</small></span><select id="pick-location"></select></label>
-        <label><span>Path <small class="muted">(added after the location)</small></span><input id="pick-path" placeholder="enq/customer" autocomplete="off"></label>
-        <label><span>File name</span><input id="pick-name" placeholder="PortfolioEndpoint.java" autocomplete="off"></label>
-        <p id="build-msg" class="note wide" hidden></p>
-      </div>
-      <label>
-        <span id="location-label">EndPoint Java file location</span>
-        <input id="location" name="location" required autocomplete="off"
-               placeholder="Bitbucket file URL, or a path such as src/main/java/com/bank/PortfolioEndpoint.java">
-      </label>
-      <div class="actions">
-        <button id="go" type="submit">Pull from Bitbucket</button>
-        <span id="status" role="status"></span>
-      </div>
-    </form>
-
-    <section id="result" hidden>
-      <div class="card meta">
-        <div class="meta-head">
-          <div>
-            <div id="file-name" class="file-name"></div>
-            <div id="file-where" class="muted"></div>
+        <p id="pick-empty" class="note" hidden></p>
+        <details id="defaults">
+          <summary>Default project / repo / branch (optional, lets you type plain file paths)</summary>
+          <div class="grid three">
+            <label><span>Project key</span><input id="conn-project" placeholder="ECOM" autocomplete="off"></label>
+            <label><span>Repository</span><input id="conn-repo" placeholder="ecomm-api" autocomplete="off"></label>
+            <label><span>Branch</span><input id="conn-branch" placeholder="develop" autocomplete="off"></label>
           </div>
-          <div class="buttons">
-            <a id="open" target="_blank" rel="noopener">Open in Bitbucket</a>
-            <button id="copy" type="button">Copy</button>
-            <button id="download" type="button">Download</button>
-          </div>
-        </div>
-        <div id="match"></div>
-        <details id="eps">
-          <summary>Endpoints found in this file</summary>
-          <table><thead><tr><th>Method</th><th>Path</th><th>Java method</th><th>Line</th></tr></thead><tbody></tbody></table>
         </details>
-      </div>
-      <div class="card code"><pre id="code"></pre></div>
+        <div class="actions">
+          <button id="login" type="submit">Log in</button>
+          <span id="conn-status" role="status"></span>
+        </div>
+        <p class="note">Your password goes only to this local server and on to Bitbucket. It is never saved; reloading the page clears it. The URL, user ID and defaults are remembered in this browser.</p>
+      </form>
     </section>
   </main>
 

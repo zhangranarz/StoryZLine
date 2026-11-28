@@ -6,12 +6,12 @@ A small local web tool: enter an **eCommAPI** and the **EndPoint Java file locat
 
 1. Windows: nothing to install (see *Running on another computer*). Elsewhere: Node.js 18 or newer, with no `npm install` needed.
 2. Double-click `start.cmd` (or run `npm start`) and open http://127.0.0.1:5180.
-3. In the **Bitbucket login** section, enter:
+3. Open the **⚙ Settings** tab and, under **Bitbucket login**, enter:
    - **Bitbucket URL**: the address you open Bitbucket at (with any context path, e.g. `https://git.bank.com/bitbucket`), or `https://bitbucket.org` for Cloud.
    - **User ID** and **Password**. If your Bitbucket uses SSO or two-factor login, use an HTTP access token as the password. Bitbucket Cloud needs an API token, not your account password.
    - Optional: a default project, repo and branch, so you can type plain file paths.
 
-   Click **Log in** to check it. The password is sent only to this local server and on to Bitbucket, and is never saved. The other fields are remembered in your browser.
+   Click **Log in** to check it; it takes you back to the **eComm API** tab, where you pull files. The password is sent only to this local server and on to Bitbucket, and is never saved. The other fields are remembered in your browser.
 
 With the Node.js server you can also preset the URL and defaults in a `.env` file (see `.env.example`). `.env` is git-ignored.
 
@@ -52,11 +52,11 @@ Instead of typing locations, keep them in an Excel sheet. The first sheet needs 
 
 *Branch* and *Endpoint Java file location* are optional. **Download template** in the page gives you a CSV to start from.
 
-1. In the **Bitbucket login** section, click **Load Excel list…** and choose the `.xlsx` (or `.csv`) file. It is read in your browser only, and remembered there until you click **Forget list**.
+1. In the **⚙ Settings** tab, click **Load Excel list…** and choose the `.xlsx` (or `.csv`) file. It is read in your browser only, and remembered there until you click **Forget list**.
 2. The login fills in from the list:
    - **Bitbucket URL**: from the sheet. If it has several, choose one from the dropdown; **Other URL…** lets you type one that isn't in the sheet.
    - **Project key**, **Repository**, **Branch**: dropdowns. Each only offers rows for the Bitbucket URL and the picks before it.
-3. In the pull form, choose the **Endpoint Java file location** and type the extra **Path** (added after the location) and the **File name**. `.java` is added if you leave out the extension.
+3. In the **eComm API** tab, choose the **Endpoint Java file location** and type the extra **Path** (added after the location) and the **File name**. `.java` is added if you leave out the extension.
 4. **Full Bitbucket file URL** fills in as you type:
    `Bitbucket URL /projects/ Project key /repos/ Repository /browse/ Endpoint location / Path / File name ?at= Branch`
 5. Click **Pull from Bitbucket** (or press Enter).
