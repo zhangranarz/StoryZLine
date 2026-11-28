@@ -4,6 +4,7 @@ const $ = id => document.getElementById(id);
 const Loc = window.StoryZLocation;
 const Java = window.StoryZJava;
 const XL = window.StoryZExcel;
+const Diagram = window.StoryZDiagram;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // Remember the last inputs per browser, purely as a convenience.
@@ -497,7 +498,15 @@ function render(results, apiPath) {
   });
   // The route file's lines for this API (the same for every row).
   const route = src('route') != null ? Java.findRouteLines(src('route'), apiPath, [flows.classes.endpoint]) : null;
-  view = { files, flows, route, selected: 0, panes: {}, whole: {} };
+  // The process diagram: each matching route line comes with the lines after it (up to the next
+  // match), which may name the Endpoint method it routes to.
+  let routeLines = [];
+  if (route) {
+    const lines = src('route').split(/\r?\n/);
+    routeLines = route.lines.map((n, k) => ({ n, text: lines.slice(n - 1, Math.min(n + 3, route.lines[k + 1] ? route.lines[k + 1] - 1 : n + 3)).join('\n') }));
+  }
+  const graph = Diagram.flowGraph({ rows: flows.rows, apiPath, routeLines });
+  view = { files, flows, route, graph, apiPath, selected: 0, panes: {}, whole: {} };
   $('result').hidden = false;
 
   const none = '<span class="none">—</span>';
@@ -558,7 +567,50 @@ function select(i) {
   view.whole = {};
   for (const tr of $('flow').querySelectorAll('tbody tr[data-row]')) tr.classList.toggle('sel', Number(tr.dataset.row) === i);
   for (const key of Object.keys(view.panes)) drawPane(key);
+  drawDiagram();
 }
+
+// The process diagram, with the selected row's path highlighted.
+function drawDiagram() {
+  const { graph, flows, files } = view;
+  if (!graph.nodes.length) {
+    $('diagram').innerHTML = `<p class="diagram-empty">Nothing to draw: ${files.endpoint && files.endpoint.content != null
+      ? (view.apiPath ? 'no Endpoint mapping matches this API.' : 'no mappings found in the Endpoint.') : 'the Endpoint file was not pulled.'}</p>`;
+    $('diagram-state').textContent = '';
+    return;
+  }
+  const routeFile = files.route && files.route.loc ? files.route.loc.path.split('/').pop() : '';
+  const lanes = { route: routeFile, endpoint: flows.classes.endpoint, api: flows.classes.api, controller: flows.classes.controller, command: flows.classes.command, builder: flows.classes.builder };
+  $('diagram').innerHTML = Diagram.toSvg(graph, { lanes, selected: flows.rows.length > 1 ? view.selected : null });
+  const row = flows.rows[view.selected];
+  $('diagram-state').textContent = flows.rows.length > 1 && row
+    ? `highlighted: ${row.methods.join(' ')} ${row.endpoint.name}() (select another row in Flow, or click a box)`
+    : '';
+}
+
+// Clicking a box selects its row (unless it is already on the selected path) and shows its code.
+function openNode(node) {
+  const rows = node.dataset.rows.split(',').map(Number);
+  if (!rows.includes(view.selected)) select(rows[0]);
+  const pane = view.panes[node.dataset.pane];
+  if (!pane) return;
+  pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const line = pane.querySelector(`.ln[data-n="${node.dataset.line}"]`);
+  if (line) {
+    const pre = pane.querySelector('.pane-code');
+    pre.scrollTop = line.offsetTop - 40;
+    line.classList.add('flash');
+    setTimeout(() => line.classList.remove('flash'), 1200);
+  }
+}
+$('diagram').addEventListener('click', e => {
+  const node = e.target.closest('.dg-node[data-pane]');
+  if (node && view) openNode(node);
+});
+$('diagram').addEventListener('keydown', e => {
+  const node = e.target.closest('.dg-node[data-pane]');
+  if (node && view && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openNode(node); }
+});
 
 // Merges [start, end] ranges that overlap or touch.
 function mergeRanges(list) {

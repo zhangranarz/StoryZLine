@@ -30,6 +30,8 @@ Then type an **API** and click **Pull from Bitbucket**:
 | `/enq/customer/unknown` | none: the whole Endpoint file is shown |
 | *(empty)* | every mapping in the Endpoint |
 
+The **Process** diagram at the top of the results draws both rows: Request → route entry → Endpoint → API → Controller → Command, with dashed arrows to the Builder. Click a row in Flow, or a box, to highlight one path.
+
 The Route pane shows the route entries whose `path` matches the API: for the first API, `portfolio-get` and `portfolio-update` (`/spl-banking/enq/customer/portfolio/*`).
 
 How the demo is wired: the Endpoint holds a `CustomerPortfolioApi portfolioApi` field and calls it; `CustomerPortfolioController implements CustomerPortfolioApi` and calls `CustomerPortfolioCommand`, whose methods each send one host request (the made-up service codes are in its `SERVICE_` constants). `PortfolioResponseBuilder` turns host results into responses (including host status → HTTP status); the Endpoint calls it statically, and the Controller's export does too. The POST row reaches two methods; the Endpoint's `audit.log(...)` calls are not counted, because `audit` is neither the API nor the Controller.

@@ -651,3 +651,67 @@ test('Builder calls are found in the Endpoint and the Controller, including stat
   const viaNew = '@RestController\npublic class E {\n  @GetMapping("/x")\n  public R x() { return new B().build(1); }\n}';
   for (const ep of [viaField, viaNew]) assert.deepStrictEqual(traceFlows({ endpoint: ep, builder }).rows[0].builder.map(b => b.name), ['build']);
 });
+
+// ---- Process diagram ----
+
+const Diagram = require('../public/shared/diagram');
+
+function demoGraph(apiPath) {
+  const flows = traceFlows({
+    endpoint: sample(SPRING), api: sample(API_FILE), controller: sample(CTL_FILE),
+    command: sample(CMD_FILE), builder: sample(BUILDER_FILE), apiPath,
+  });
+  const xml = sample(ROUTES);
+  const lines = xml.split(/\r?\n/);
+  const hits = findRouteLines(xml, apiPath, [flows.classes.endpoint]).lines;
+  const routeLines = hits.map(n => ({ n, text: lines.slice(n - 1, n + 3).join('\n') }));
+  return { flows, graph: Diagram.flowGraph({ rows: flows.rows, apiPath, routeLines }) };
+}
+
+test('the process diagram has a box per step and an arrow per call', () => {
+  const { flows, graph } = demoGraph('/spl-banking/enq/customer/portfolio/12345');
+  const label = id => { const n = graph.nodes.find(x => x.id === id); return `${n.layer}:${n.label}`; };
+  assert.deepStrictEqual(graph.edges.map(e => `${label(e.from)} > ${label(e.to)} [${e.kind}] rows ${e.rows}`), [
+    'start:/spl-banking/enq/customer/portfolio/12345 > route:portfolio-get [route] rows 0',
+    'route:portfolio-get > endpoint:getPortfolio() [route] rows 0',
+    'endpoint:getPortfolio() > api:getPortfolio() [call] rows 0',
+    'api:getPortfolio() > controller:getPortfolio() [implements] rows 0',
+    'controller:getPortfolio() > command:enquire() [call] rows 0',
+    'endpoint:getPortfolio() > builder:portfolio() [response] rows 0',
+    'start:/spl-banking/enq/customer/portfolio/12345 > route:portfolio-update [route] rows 1',
+    'route:portfolio-update > endpoint:updatePortfolio() [route] rows 1',
+    'endpoint:updatePortfolio() > api:validate() [call] rows 1',
+    'endpoint:updatePortfolio() > api:savePortfolio() [call] rows 1',
+    'api:validate() > controller:validate() [implements] rows 1',
+    'api:savePortfolio() > controller:savePortfolio() [implements] rows 1',
+    'controller:savePortfolio() > command:update() [call] rows 1',
+    'endpoint:updatePortfolio() > builder:noContent() [response] rows 1',
+  ]);
+  // Boxes know where their code is.
+  const enquire = graph.nodes.find(n => n.label === 'enquire()');
+  assert.deepStrictEqual(enquire.ref, { pane: 'command', line: flows.rows[0].command[0].declLine });
+
+  // The SVG: a lane per layer, the selected row on, the other dimmed, and clickable boxes.
+  const svg = Diagram.toSvg(graph, { lanes: flows.classes, selected: 1 });
+  for (const lane of ['Request', 'Route', 'Endpoint', 'API', 'Controller', 'Command', 'Builder']) assert.match(svg, new RegExp(`dg-lane-title">${lane}<`));
+  assert.match(svg, /class="dg-node dg-endpoint dg-on"[^>]*data-pane="endpoint"/);
+  assert.match(svg, /class="dg-node dg-command dg-off"/);  // enquire() belongs to row 0
+  assert.strictEqual((svg.match(/dg-response/g) || []).length, 2);
+  assert.ok(!/<script/i.test(svg));
+});
+
+test('the process diagram without a route file, and with nothing to draw', () => {
+  const flows = traceFlows({ endpoint: sample(SPRING), controller: sample(CTL_FILE), apiPath: '/enq/customer/summary' });
+  const graph = Diagram.flowGraph({ rows: flows.rows, apiPath: '/enq/customer/summary' });
+  assert.deepStrictEqual(graph.edges.map(e => `${e.from} > ${e.to.split(':')[0]} [${e.kind}]`), [
+    'start > endpoint [route]', `endpoint:${flows.rows[0].endpoint.declLine} > controller [call]`,
+  ]);
+  assert.deepStrictEqual(Diagram.flowGraph({ rows: [] }), { nodes: [], edges: [] });
+  // Route entries attach to Endpoint methods by name, else by HTTP method.
+  const rows = [{ endpoint: { name: 'a' }, methods: ['GET'] }, { endpoint: { name: 'b' }, methods: ['POST'] }];
+  assert.strictEqual(Diagram.routeFits('<route path="/x"> <target operation="b"/>', rows[0], rows), false);
+  assert.strictEqual(Diagram.routeFits('<route path="/x"> <target operation="b"/>', rows[1], rows), true);
+  assert.strictEqual(Diagram.routeFits('<route method="POST" path="/x">', rows[0], rows), false);
+  assert.strictEqual(Diagram.routeFits('route.x=/x', rows[0], rows), true);
+  assert.strictEqual(Diagram.routeLabel('<route id="portfolio-get" path="/a/b">'), 'portfolio-get');
+});

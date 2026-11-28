@@ -112,3 +112,28 @@ pre { margin: 0; overflow: auto; max-height: 75vh; background: var(--code-bg); f
 .file-row > label { margin-bottom: 4px; }
 @media (max-width: 640px) { .file-row { grid-template-columns: 1fr; } }
 #flow .pill { white-space: nowrap; }
+
+/* Process diagram (SVG from shared/diagram.js); colours follow the page theme. */
+.diagram { overflow-x: auto; }
+.diagram svg { display: block; margin: 0 auto; max-width: none; font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; }
+.dg-lane rect { fill: var(--card); }
+.dg-lane.dg-odd rect { fill: var(--bg); }
+.dg-lane-title { fill: var(--text); font-weight: 600; font-size: 13px; }
+.dg-lane-sub { fill: var(--muted); font-size: 11px; }
+.dg-node rect { fill: var(--card); stroke: var(--border); stroke-width: 1.2; }
+.dg-node.dg-on rect { stroke: var(--accent); stroke-width: 2; }
+.dg-node.dg-start rect { fill: var(--accent); stroke: var(--accent); }
+.dg-node.dg-start .dg-label, .dg-node.dg-start .dg-sub { fill: var(--accent-text); }
+.dg-node[data-pane] { cursor: pointer; }
+.dg-node[data-pane]:hover rect, .dg-node[data-pane]:focus-visible rect { stroke: var(--accent); stroke-width: 2.5; }
+.dg-node:focus { outline: none; }
+.dg-label { fill: var(--text); text-anchor: middle; font-weight: 600; }
+.dg-sub { fill: var(--muted); text-anchor: middle; font-size: 11px; }
+.dg-off { opacity: .32; }
+.dg-edge { fill: none; stroke: var(--gutter); stroke-width: 1.5; }
+.dg-edge.dg-on { stroke: var(--accent); stroke-width: 1.8; }
+.dg-edge.dg-response { stroke-dasharray: 5 4; }
+.dg-edge.dg-implements { stroke-dasharray: 2 3; }
+.dg-head-edge { fill: var(--gutter); }
+.dg-head-on, .dg-head-response { fill: var(--accent); }
+.diagram-empty { color: var(--muted); margin: 0; }

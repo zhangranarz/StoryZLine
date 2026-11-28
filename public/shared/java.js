@@ -272,11 +272,16 @@ function callsIn(code, lineOf, method, vars, known, statics = []) {
   return calls;
 }
 
-// Adds the methods of `callees` named by `calls` to `list` (once each); returns the raw methods added.
-function collect(list, callees, calls) {
+// Adds the methods of `callees` named by `calls` to `list` (once each), and an edge from `from`
+// ({ layer, name, declLine }) to each of them to `edges`; returns the raw methods added.
+function collect(list, callees, calls, edges, from, toLayer) {
   const added = [];
   for (const c of calls) {
     for (const target of callees.filter(x => x.name === c.called)) {
+      const to = { layer: toLayer, name: target.name, declLine: target.declLine };
+      if (!edges.some(e => e.from.layer === from.layer && e.from.declLine === from.declLine && e.to.layer === toLayer && e.to.declLine === to.declLine)) {
+        edges.push({ from, to, kind: 'call', call: `${c.receiver}.${c.called}()` });
+      }
       if (list.some(x => x.declLine === target.declLine)) continue;
       list.push({ ...section(target), call: `${c.receiver}.${c.called}()` });
       added.push(target);
@@ -355,14 +360,23 @@ function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controll
       methods: s.methods, paths: s.paths, match: s.match, endpoint: section(endpoint),
       api: [], controller: [], command: [], builder: [],
       callLines: [], commandCallLines: [], builderCallLines: { endpoint: [], controller: [] },
+      edges: [],  // who calls whom: [{ from, to, kind: 'call' | 'implements', call }]
     };
+    const node = (layer, m) => ({ layer, name: m.name || m.methodName, declLine: m.declLine });
+    const epNode = node('endpoint', endpoint);
 
     // Endpoint -> API and Controller.
     const epCalls = callsIn(ep.code, ep.lineOf, endpoint, ep.vars,
       name => has(callees.api)(name) || has(callees.controller)(name), [...statics('api'), ...statics('controller')]);
-    collect(row.api, callees.api, epCalls);
-    const ctlTargets = collect(row.controller, callees.controller, epCalls);
+    collect(row.api, callees.api, epCalls, row.edges, epNode, 'api');
+    const ctlTargets = collect(row.controller, callees.controller, epCalls, row.edges, epNode, 'controller');
     row.callLines = epCalls.map(c => c.line);
+    // An API method reached by the Endpoint is implemented by the Controller method of the same name.
+    for (const a of row.api) {
+      for (const c of row.controller.filter(x => x.name === a.name)) {
+        row.edges.push({ from: node('api', a), to: node('controller', c), kind: 'implements', call: 'implemented by' });
+      }
+    }
 
     // Controller (or, without one, Endpoint) -> Command.
     if (callees.command.length) {
@@ -371,7 +385,7 @@ function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controll
       row.commandFrom = fromController ? 'controller' : 'endpoint';
       for (const m of from.methods) {
         const calls = callsIn(from.file.code, from.file.lineOf, m, from.file.commandVars, has(callees.command), statics('command'));
-        collect(row.command, callees.command, calls);
+        collect(row.command, callees.command, calls, row.edges, node(row.commandFrom, m), 'command');
         row.commandCallLines.push(...calls.map(c => c.line));
       }
     }
@@ -382,7 +396,7 @@ function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controll
       for (const [key, file, methods] of sources) {
         for (const m of methods) {
           const calls = callsIn(file.code, file.lineOf, m, file.builderVars, has(callees.builder), statics('builder'));
-          collect(row.builder, callees.builder, calls);
+          collect(row.builder, callees.builder, calls, row.edges, node(key, m), 'builder');
           row.builderCallLines[key].push(...calls.map(c => c.line));
         }
       }
