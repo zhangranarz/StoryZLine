@@ -85,8 +85,10 @@
         if (e.from.layer === 'endpoint' && e.to.layer === 'controller' && implemented.has(e.to.declLine)) continue;
         let from = `${e.from.layer}:${e.from.declLine}`;
         const to = `${e.to.layer}:${e.to.declLine}`;
-        addNode(from, e.from.layer, `${e.from.name}()`, '', i, { pane: e.from.layer, line: e.from.declLine });
-        addNode(to, e.to.layer, `${e.to.name}()`, '', i, { pane: e.to.layer, line: e.to.declLine });
+        // A box shows a method name with "()", or its own label (e.g. a Command class name).
+        const box = end => [end.label || `${end.name}()`, { pane: end.layer, line: end.refLine || end.declLine }];
+        addNode(from, e.from.layer, box(e.from)[0], '', i, box(e.from)[1]);
+        addNode(to, e.to.layer, box(e.to)[0], e.to.label ? 'class' : '', i, box(e.to)[1]);
         let label = e.call;
         if (via && e.from.layer === 'endpoint' && e.to.layer !== 'builder') {
           from = via;

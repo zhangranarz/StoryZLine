@@ -461,40 +461,94 @@ $('form').addEventListener('submit', async e => {
   }
   setStatus(`Pulling ${chosen.length} file${chosen.length === 1 ? '' : 's'}…`);
   $('go').disabled = true;
+  const pull = async (c, cfg) => {
+    let loc;
+    try {
+      loc = Loc.resolveLocation(c.url, cfg);
+      const reply = await post('/api/get', { url: loc.rawUrl, connection: conn });
+      const problem = Loc.responseProblem(reply,
+        `File not found: ${loc.project}/${loc.repo}/${loc.path}${loc.ref ? ` at ${loc.ref}` : ''}.`);
+      if (problem) return { ...c, loc, error: problem, status: reply.status };
+      return { ...c, loc, content: reply.body };
+    } catch (err) {
+      return { ...c, loc, error: err.message };
+    }
+  };
   try {
-    const results = await Promise.all(chosen.map(async c => {
-      let loc;
-      try {
-        loc = Loc.resolveLocation(c.url, c.part.cfg(conn));
-        const reply = await post('/api/get', { url: loc.rawUrl, connection: conn });
-        const problem = Loc.responseProblem(reply,
-          `File not found: ${loc.project}/${loc.repo}/${loc.path}${loc.ref ? ` at ${loc.ref}` : ''}.`);
-        if (problem) return { ...c, loc, error: problem, status: reply.status };
-        return { ...c, loc, content: reply.body };
-      } catch (err) {
-        return { ...c, loc, error: err.message };
+    const results = await Promise.all(chosen.map(c => pull(c, c.part.cfg(conn))));
+    const apiPath = $('api').value.trim();
+
+    // Second round: the Command classes named by the Controller methods' @CommandHandler, in the
+    // Controller's project and repository, folder = Controller folder - last "api" + processing/impl.
+    const handlers = {};
+    const byKey = Object.fromEntries(results.map(r => [r.key, r]));
+    const content = k => (byKey[k] && byKey[k].content != null ? byKey[k].content : null);
+    const controller = byKey.controller;
+    if (content('endpoint') != null && content('controller') != null && controller.loc) {
+      const first = Java.traceFlows({ endpoint: content('endpoint'), api: content('api'), controller: content('controller'), apiPath });
+      const names = [...new Set(first.rows.map(r => r.commandHandler && r.commandHandler.command).filter(Boolean))];
+      if (names.length) setStatus(`Pulling ${names.join(', ')} named by @CommandHandler…`);
+      const path = Loc.commandPathFrom(controller.loc.path);
+      await Promise.all(names.map(async name => {
+        const where = { baseUrl: conn.baseUrl, project: controller.loc.project, repo: controller.loc.repo, path, fileName: name, extension: '.java' };
+        const url = Loc.buildFileUrl(where);
+        const same = results.find(r => r.key === 'command' && r.loc && r.loc.path === `${path}/${name}.java` && r.loc.repo === where.repo);
+        handlers[name] = same || await pull({ key: 'command', label: 'Command', url }, { ...conn, project: where.project, repo: where.repo });
+      }));
+      // Show where the (first) Command came from in the Command box.
+      if (names.length) {
+        const box = parts.find(p => p.key === 'command');
+        box.$('project').value = controller.loc.project;
+        box.$('repo').value = controller.loc.repo;
+        box.$('path').value = path;
+        box.files[0].name.value = names[0];
+        box.files[0].ext.value = '.java';
+        box.files[0].extSelect.value = '.java';
+        box.files[0].ext.hidden = true;
+        box.refresh();
       }
-    }));
-    const ok = results.filter(r => r.content != null);
+    }
+
+    const all = [...results, ...Object.values(handlers).filter(h => !results.includes(h))];
+    const ok = all.filter(r => r.content != null);
     if (ok.length) loggedIn = true;
-    if (results.some(r => r.status === 401)) loggedIn = false;
+    if (all.some(r => r.status === 401)) loggedIn = false;
     updateState();
-    render(results, $('api').value.trim());
-    const failed = results.filter(r => r.error);
+    render(results, apiPath, handlers);
+    const failed = all.filter(r => r.error);
     setStatus(failed.length
-      ? `Pulled ${ok.length} of ${results.length} files. ${failed.map(r => `${r.label}: ${r.error}`).join(' ')}`
+      ? `Pulled ${ok.length} of ${all.length} files. ${failed.map(r => `${r.label}: ${r.error}`).join(' ')}`
       : `Pulled ${ok.length} file${ok.length === 1 ? '' : 's'}.`, failed.length > 0);
   } finally {
     $('go').disabled = false;
   }
 });
 
-function render(results, apiPath) {
+function render(results, apiPath, handlers = {}) {
   const files = Object.fromEntries(results.map(r => [r.key, r]));
   const src = k => (files[k] && files[k].content != null ? files[k].content : null);
   const flows = Java.traceFlows({
     endpoint: src('endpoint'), api: src('api'), controller: src('controller'), command: src('command'), apiPath,
   });
+  // A Controller method's @CommandHandler(command = "X") names the row's Command class, pulled as
+  // X.java: it replaces the calls found into the Command box's file.
+  for (const r of flows.rows) {
+    const h = r.commandHandler;
+    const file = h && handlers[h.command];
+    if (!file) continue;
+    const classLine = file.content != null
+      ? file.content.split(/\r?\n/).findIndex(l => new RegExp(`\\b(class|interface|record|enum)\\s+${h.command}\\b`).test(l)) + 1 || 1
+      : 1;
+    r.commandAuto = { ...file, handler: h, classLine };
+    r.command = [];
+    r.edges = r.edges.filter(e => e.to.layer !== 'command');
+    r.edges.push({
+      from: { layer: 'controller', name: h.method, declLine: h.declLine },
+      to: { layer: 'command', name: h.command, declLine: `class-${h.command}`, label: h.command, refLine: classLine },
+      kind: 'call',
+      call: `@CommandHandler(command = "${h.command}"${h.validator ? `, validator = "${h.validator}"` : ''})`,
+    });
+  }
   // Each row's route: the <route> whose <from uri="…_name"/> names its Endpoint method.
   let byName = false;
   if (src('route') != null) {
@@ -521,6 +575,15 @@ function render(results, apiPath) {
   // How an API/Controller method was found: by the Endpoint method's name, or by following its calls.
   const by = (r, k) => (r.linkedBy && r.linkedBy[k] === 'name' ? ' <small>(same name)</small>' : '');
   const match = r => (r.match ? `<span class="pill ${r.match}">${r.match === 'exact' ? 'Exact match' : 'Matches end of API'}</span>` : none);
+  // The Command: the class named by @CommandHandler (with its validator), else the calls found.
+  const commandCell = r => {
+    if (r.commandAuto) {
+      const h = r.commandAuto.handler;
+      const v = h.validator ? `; validator <code>${esc(h.validator)}</code>` : '';
+      return `<code>${esc(h.command)}</code>${r.commandAuto.error ? ' <span class="none">(not found)</span>' : ''} <small>(@CommandHandler${v})</small>`;
+    }
+    return src('command') != null ? names(r.command) : notPulled;
+  };
   $('flow').querySelector('tbody').innerHTML = flows.rows.map((r, i) => `
     <tr data-row="${i}" tabindex="0">
       <td>${esc(r.methods.join(', ')) || none}</td>
@@ -530,11 +593,11 @@ function render(results, apiPath) {
       <td>${src('route') != null ? (r.routes && r.routes.length ? r.routes.map(x => `<code>${esc(x.id || `line ${x.start}`)}</code>`).join('<br>') : none) : notPulled}</td>
       <td>${src('api') != null ? names(r.api) + by(r, 'api') : notPulled}</td>
       <td>${src('controller') != null ? names(r.controller) + by(r, 'controller') : notPulled}</td>
-      <td>${src('command') != null ? names(r.command) : notPulled}</td>
+      <td>${commandCell(r)}</td>
     </tr>`).join('') ||
     `<tr><td colspan="8" class="none">${src('endpoint') == null ? 'The Endpoint file was not pulled.' : apiPath ? 'No Endpoint mapping matches this API.' : 'No mappings found in the Endpoint.'}</td></tr>`;
 
-  const linked = flows.rows.filter(r => r.api.length || r.controller.length || r.command.length).length;
+  const linked = flows.rows.filter(r => r.api.length || r.controller.length || r.command.length || r.commandAuto).length;
   $('flow-state').textContent = flows.rows.length ? `${flows.rows.length} row${flows.rows.length === 1 ? '' : 's'}, ${linked} linked past the Endpoint` : '';
   $('flow-state').className = 'state' + (linked ? ' ok' : '');
   const notes = [];
@@ -544,7 +607,7 @@ function render(results, apiPath) {
   if (called.length && flows.rows.length && !flows.rows.some(r => r.api.length || r.controller.length)) {
     notes.push(`No calls to ${called.join(' or ')} were found in the Endpoint methods.`);
   }
-  if (flows.classes.command && flows.rows.length && !flows.rows.some(r => r.command.length)) {
+  if (flows.classes.command && flows.rows.length && !flows.rows.some(r => r.command.length || r.commandAuto)) {
     notes.push(`No calls to ${flows.classes.command} were found in the ${src('controller') != null ? 'Controller' : 'Endpoint'} methods.`);
   }
   if (byName) {
@@ -560,7 +623,7 @@ function render(results, apiPath) {
 
   $('panes').innerHTML = '';
   for (const key of FILE_ORDER) {
-    if (!files[key]) continue;
+    if (!files[key] && !(key === 'command' && flows.rows.some(r => r.commandAuto))) continue;
     const pane = $('pane-template').content.firstElementChild.cloneNode(true);
     pane.dataset.pane = key;
     $('panes').append(pane);
@@ -648,6 +711,8 @@ function rowParts(key, row) {
     return { ranges: mergeRanges(marks.map(n => [Math.max(1, n - 2), Math.min(last, n + 2)])), marks };
   }
   if (!row) return { ranges: [], marks: [] };
+  // A Command named by @CommandHandler: the whole class, its declaration marked.
+  if (key === 'command' && row.commandAuto) return { ranges: [], marks: [row.commandAuto.classLine] };
   const found = (key === 'endpoint' ? [row.endpoint] : row[key]).filter(Boolean);
   const ranges = [];
   for (const [s, e] of found.map(m => [m.startLine, m.endLine]).sort((a, b) => a[0] - b[0])) {
@@ -658,14 +723,36 @@ function rowParts(key, row) {
   // Also mark the call lines: the Endpoint's calls onward, and the Command calls where they are.
   const marks = found.map(m => m.declLine)
     .concat(key === 'endpoint' ? row.callLines : [])
-    .concat(key === row.commandFrom ? row.commandCallLines : []);
+    .concat(key === row.commandFrom ? row.commandCallLines : [])
+    .concat(key === 'controller' && row.commandAuto ? [row.commandAuto.handler.line] : []);
   return { ranges, marks };
 }
 
+// The file a pane shows for the selected row: the Command named by its @CommandHandler, if any.
+function paneFile(key) {
+  const row = view.flows.rows[view.selected];
+  if (key === 'command' && row && row.commandAuto) return row.commandAuto;
+  return view.files[key];
+}
+
 function drawPane(key) {
-  const f = view.files[key];
+  const f = paneFile(key);
   const pane = view.panes[key];
   const q = cls => pane.querySelector('.' + cls);
+  if (!f) {
+    // Only @CommandHandler Commands were pulled, and this row has none.
+    q('pane-label').textContent = 'Command';
+    q('pane-file').textContent = '—';
+    q('pane-where').textContent = '';
+    q('pane-open').hidden = true;
+    q('pane-msg').textContent = 'The Controller method of this row has no @CommandHandler.';
+    q('pane-msg').className = 'pane-msg note';
+    q('pane-msg').hidden = false;
+    q('pane-code').innerHTML = '';
+    q('pane-toggle').hidden = true;
+    q('pane-copy').hidden = true;
+    return;
+  }
   q('pane-label').textContent = f.label;
   q('pane-file').textContent = f.loc ? f.loc.path.split('/').pop() : f.url;
   q('pane-where').textContent = f.loc ? `${f.loc.project}/${f.loc.repo} · ${f.loc.path}` : '';
@@ -687,7 +774,9 @@ function drawPane(key) {
   const { ranges, marks } = rowParts(key, row);
   const whole = view.whole[key] || !ranges.length;
   msg.className = 'pane-msg note';
-  msg.textContent = ranges.length ? ''
+  msg.textContent = key === 'command' && row && row.commandAuto
+    ? `From @CommandHandler on ${row.commandAuto.handler.method}() in the Controller${row.commandAuto.handler.validator ? ` (validator ${row.commandAuto.handler.validator})` : ''}: the whole class.`
+    : ranges.length ? ''
     : key === 'route' ? (view.byName && row
       ? `No <route> has a <from uri> ending in _${row.endpoint.name}: showing the whole file.`
       : 'No line in the Route file matches this API: showing the whole file.')
@@ -712,7 +801,7 @@ function drawPane(key) {
 
 // The text a pane shows: its found sections, or the whole file.
 function shownText(key) {
-  const f = view.files[key];
+  const f = paneFile(key);
   const { ranges } = rowParts(key, view.flows.rows[view.selected]);
   if (view.whole[key] || !ranges.length) return f.content;
   const lines = f.content.split(/\r?\n/);

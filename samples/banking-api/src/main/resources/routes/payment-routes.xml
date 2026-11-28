@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Demo Camel route file for StoryZLine: invented, not a real application's. -->
+<routes xmlns="http://camel.apache.org/schema/spring">
+
+    <route id="payments.submit">
+        <from uri="direct:payments.api_processSubmitApi"/>
+        <log message="Payment submitted"/>
+        <to uri="bean:paymentController?method=processSubmitApi"/>
+    </route>
+
+    <route id="payments.cancel">
+        <from uri="direct:payments.api_processCancelApi"/>
+        <to uri="bean:paymentController?method=processCancelApi"/>
+    </route>
+</routes>

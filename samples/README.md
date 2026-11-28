@@ -39,3 +39,16 @@ Also try:
 - Clear the Controller File: the Controller column says *not pulled*, the API column still fills.
 - `enterprise-services`, Path `src/main/java/com/example/enterprise`, File `AccountBalanceResource` in the Endpoint box (APIController files cleared), API `/accounts/123-456/balance`: a JAX-RS example.
 - File `Missing` gives *File not found* in that pane; the password `wrong` gives *Bitbucket rejected the login*.
+
+## @CommandHandler: the banking-api repository
+
+Here the Command is not typed in: it is found from the Controller. Repository `banking-api` in each box:
+
+| Box | Path | File(s) |
+|---|---|---|
+| Endpoint | `src/main/java/com/api` | File `PaymentEndpoint` |
+| Route | `src/main/resources/routes` | File `payment-routes` (Extension `.xml`) |
+| APIController | `src/main/java/com/api` | API File `PaymentApi`, Controller File `PaymentController` |
+| Command | *(leave empty)* | |
+
+API `/spl-banking/payments/submit`: Endpoint `processSubmitApi()` → route `payments.submit` → API and Controller `processSubmitApi()` *(same name)*. That Controller method has `@CommandHandler(command = "SubmitApiCommand", validator = "SubmitApiValidator")`, so `src/main/java/com/processing/impl/SubmitApiCommand.java` (the Controller's folder without `api`, plus `processing/impl`) is pulled, and the Command box is filled in with it. Try `/spl-banking/payments/cancel/77` too: its `@CommandHandler` is written over three lines and leads to `CancelApiCommand`.

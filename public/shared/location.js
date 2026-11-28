@@ -128,6 +128,16 @@
     return `${base}/projects/${p}/repos/${r}/browse/${filePath}${at}`;
   }
 
+  // The folder of the Command classes for a Controller file: the Controller's folder without its
+  // last "api" folder (and anything after it), plus processing/impl. For example
+  // banking-api/src/main/java/com/api/SubmitController.java -> banking-api/src/main/java/com/processing/impl
+  function commandPathFrom(controllerFilePath) {
+    const segs = String(controllerFilePath || '').replace(/\\/g, '/').split('/').filter(Boolean);
+    segs.pop();  // the file name
+    const i = segs.map(x => x.toLowerCase()).lastIndexOf('api');
+    return [...(i >= 0 ? segs.slice(0, i) : segs), 'processing', 'impl'].join('/');
+  }
+
   // A cheap authenticated request that confirms the URL and login work.
   function loginCheckUrl(cfg) {
     checkBaseUrl(cfg);
@@ -151,7 +161,7 @@
     return null;
   }
 
-  const api = { resolveLocation, buildFileUrl, loginCheckUrl, responseProblem, isCloud, LocationError };
+  const api = { resolveLocation, buildFileUrl, commandPathFrom, loginCheckUrl, responseProblem, isCloud, LocationError };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else window.StoryZLocation = api;
 })();

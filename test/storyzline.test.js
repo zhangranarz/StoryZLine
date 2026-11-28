@@ -454,7 +454,7 @@ test('demo files give the results listed in samples/README.md', () => {
 
   const list = toEntries(readCsv(sample('demo-list.csv'))).entries;
   assert.deepStrictEqual(list.map(e => `${e.baseUrl} ${e.project}/${e.repo}`),
-    ['http://127.0.0.1:5199 DEMO/ecomm-services', 'http://127.0.0.1:5199 DEMO/enterprise-services']);
+    ['http://127.0.0.1:5199 DEMO/ecomm-services', 'http://127.0.0.1:5199 DEMO/enterprise-services', 'http://127.0.0.1:5199 DEMO/banking-api']);
 });
 
 test('mock Bitbucket serves the demo files through server.py', { skip: !python && 'Python 3.7+ not available' }, async () => {
@@ -832,4 +832,52 @@ test('the diagram gets a Validator lane, and arrows that skip a lane go round th
   const toValidator = [...svg.matchAll(/<path class="dg-edge dg-call[^"]*" d="([^"]+)"[^>]*><title>PortfolioRequestValidator\.check/g)];
   assert.strictEqual(toValidator.length, 2);
   for (const m of toValidator) assert.match(m[1], / L/);
+});
+
+// ---- @CommandHandler -> Command class ----
+
+const { commandHandlerOf } = require('../public/shared/java');
+const { commandPathFrom } = require('../public/shared/location');
+const BANK = 'banking-api/src/main/java/com/';
+
+test('the Command folder: the Controller folder without its last "api" folder, plus processing/impl', () => {
+  assert.strictEqual(commandPathFrom('/banking-api/src/main/java/com/api/PaymentController.java'), 'banking-api/src/main/java/com/processing/impl');
+  assert.strictEqual(commandPathFrom('svc\\src\\main\\java\\com\\api\\v2\\X.java'), 'svc/src/main/java/com/processing/impl');
+  assert.strictEqual(commandPathFrom('svc/src/main/java/com/API/X.java'), 'svc/src/main/java/com/processing/impl');
+  assert.strictEqual(commandPathFrom('svc/src/main/java/com/ctl/X.java'), 'svc/src/main/java/com/ctl/processing/impl');  // no "api": just appended
+});
+
+test('@CommandHandler on the Controller method names the Command (and validator)', () => {
+  const ctl = sample(BANK + 'api/PaymentController.java');
+  const methods = findMethods(ctl);
+  const of = name => commandHandlerOf(ctl, methods.find(m => m.name === name));
+  const lines = ctl.split(/\r?\n/);
+  const submit = of('processSubmitApi');
+  assert.deepStrictEqual([submit.command, submit.validator], ['SubmitApiCommand', 'SubmitApiValidator']);
+  assert.match(lines[submit.line - 1], /@CommandHandler\(command = "SubmitApiCommand"/);
+  const cancel = of('processCancelApi');  // annotation over three lines
+  assert.deepStrictEqual([cancel.command, cancel.validator], ['CancelApiCommand', 'CancelApiValidator']);
+  assert.match(lines[cancel.line - 1], /@CommandHandler\($/);
+  // Shorthand form, none at all, and one in a comment.
+  const short = 'class C {\n  @CommandHandler("X")\n  void a() { }\n  void b() { }\n  // @CommandHandler(command = "Y")\n  void c() { }\n}';
+  const sm = findMethods(short);
+  assert.deepStrictEqual(sm.map(m => commandHandlerOf(short, m) && commandHandlerOf(short, m).command), ['X', null, null]);
+
+  // Through traceFlows: the row records the handler of its same-name Controller method.
+  const flows = traceFlows({
+    endpoint: sample(BANK + 'api/PaymentEndpoint.java'), api: sample(BANK + 'api/PaymentApi.java'),
+    controller: ctl, apiPath: '/spl-banking/payments/submit',
+  });
+  assert.strictEqual(flows.rows.length, 1);
+  assert.deepStrictEqual(flows.rows[0].linkedBy, { api: 'name', controller: 'name' });
+  assert.deepStrictEqual([flows.rows[0].commandHandler.command, flows.rows[0].commandHandler.method], ['SubmitApiCommand', 'processSubmitApi']);
+});
+
+test('the demo Command files sit where the rule points', () => {
+  const folder = commandPathFrom('banking-api/src/main/java/com/api/PaymentController.java').replace(/^banking-api\//, '');
+  for (const name of ['SubmitApiCommand', 'CancelApiCommand']) {
+    const file = path.join(SAMPLES, 'banking-api', folder, name + '.java');
+    assert.ok(fs.existsSync(file), file);
+    assert.match(fs.readFileSync(file, 'utf8'), new RegExp('public class ' + name + '\\b'));
+  }
 });

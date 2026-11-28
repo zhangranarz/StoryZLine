@@ -290,6 +290,19 @@ function collect(list, callees, calls, edges, from, toLayer) {
   return added;
 }
 
+// The Command named by a method's @CommandHandler(command = "SubmitApiCommand", validator = "…")
+// (or @CommandHandler("SubmitApiCommand")), read from the annotations above it.
+// Returns { command, validator, line } (line: where the annotation starts) or null.
+function commandHandlerOf(src, method) {
+  const head = stripComments(src).split(/\r?\n/).slice(method.startLine - 1, method.declLine).join('\n');
+  const m = head.match(/@(?:[\w.]+\.)?CommandHandler\s*\(([\s\S]*?)\)/);
+  if (!m) return null;
+  const attr = name => (m[1].match(new RegExp(`\\b${name}\\s*=\\s*"([^"]+)"`)) || [])[1] || null;
+  const command = attr('command') || (m[1].match(/^\s*"([^"]+)"/) || [])[1] || null;
+  const line = method.startLine + head.slice(0, m.index).split('\n').length - 1;
+  return command ? { command, validator: attr('validator'), line } : null;
+}
+
 // Follows an eComm API through its code. Each source is a file's text, or null if not pulled.
 //   API path -> Endpoint: the Endpoint methods whose mapping matches apiPath (exact, or the end of
 //                         it); with no apiPath, every mapped Endpoint method.
@@ -395,6 +408,13 @@ function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controll
         if (found.length) row.linkedBy[k] = 'call';
       }
       if (k === 'controller') ctlTargets = found;
+    }
+    // The Command named by the Controller method's @CommandHandler, if it has one.
+    if (controllerSrc) {
+      for (const m of ctlTargets) {
+        const h = commandHandlerOf(controllerSrc, m);
+        if (h) { row.commandHandler = { ...h, method: m.name, declLine: m.declLine, startLine: m.startLine }; break; }
+      }
     }
     // Mark the Endpoint's lines that make those calls: calls to the shared name, or the calls followed.
     const byName = Object.values(row.linkedBy).includes('name');
@@ -592,7 +612,7 @@ function analyse(src, api) {
   };
 }
 
-const api = { analyse, findEndpoints, findMethods, traceFlows, findRouteSections, findRouteLines, matchEndpoints, normaliseApi, stripComments };
+const api = { analyse, findEndpoints, findMethods, traceFlows, commandHandlerOf, findRouteSections, findRouteLines, matchEndpoints, normaliseApi, stripComments };
 if (typeof module === 'object' && module.exports) module.exports = api;
 else window.StoryZJava = api;
 })();
