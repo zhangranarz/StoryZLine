@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Demo shared routes for StoryZLine (a second Reference File, in its own folder): invented, not a real application's. -->
+<routes xmlns="http://camel.apache.org/schema/spring">
+
+    <route id="common.trace">
+        <from uri="direct:common.trace"/>
+        <log message="Trace ${routeId} ${header.paymentRef}"/>
+    </route>
+</routes>

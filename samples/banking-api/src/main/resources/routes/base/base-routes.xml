@@ -15,5 +15,6 @@
         <setHeader name="masked">
             <constant>true</constant>
         </setHeader>
+        <to uri="direct:common.trace"/>
     </route>
 </routes>

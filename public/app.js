@@ -151,12 +151,72 @@ class Part {
     // its File, Extension and joined URL (and its own Path first, with opts.ownPath).
     const multi = files.length > 1;
     const ownPath = multi && !!opts.ownPath;
+    this.multi = multi;
+    this.ownPath = ownPath;
+    // Files with repeat: true can have more rows (+ button), each with a × to remove it.
+    this.defs = files;
+    this.repeatable = multi && files.some(f => f.repeat);
+    this.addRows = {};
     this.el.querySelector('.parts').style.setProperty('--cols',
       'minmax(6rem, 1.4fr) minmax(6rem, .7fr) minmax(8.5rem, 1fr)' + (ownPath ? '' : ' minmax(8rem, 2fr)') +
       (multi ? '' : ' minmax(7rem, 1.3fr) minmax(5.5rem, .7fr)'));
     if (ownPath) this.$('path').closest('label').remove();  // no Path for the whole box
     if (multi) this.el.append(this.$('msg'));
-    this.files = files.map(f => {
+    this.files = [];
+    for (const f of files) {
+      this.files.push(this.makeFile(f));
+      if (f.repeat) {
+        const add = document.createElement('div');
+        add.className = 'file-add';
+        add.innerHTML = `<button type="button" class="file-add-btn">+ ${esc(f.title)}</button>`;
+        add.firstElementChild.addEventListener('click', () => this.addFile(f.key).path.focus());
+        this.$('urls').append(add);
+        this.addRows[f.key] = add;
+      }
+    }
+    $('sections').append(this.el);
+
+    for (const k of LEVELS) {
+      this.$(k + '-select').addEventListener('change', e => {
+        const input = this.$(k);
+        if (e.target.value === OTHER) {
+          e.target.dataset.other = '1';
+          input.value = '';
+          input.hidden = false;
+          input.focus();
+        } else {
+          delete e.target.dataset.other;
+          input.value = e.target.value;
+        }
+        this.resetAfter(k);
+        this.refresh();
+      });
+      this.$(k).addEventListener('input', () => this.refresh());
+    }
+    if (this.$('path')) this.$('path').addEventListener('input', () => this.update());
+  }
+
+  // Another row for a repeatable file, after its last row. quiet: don't rebuild/save yet.
+  addFile(key, quiet = false) {
+    const def = this.defs.find(d => d.key === key);
+    const file = this.makeFile(def, true);
+    const last = this.files.map(x => x.key).lastIndexOf(key);
+    if (!quiet && last >= 0 && file.path) file.path.value = this.files[last].path.value;  // often the same folder
+    this.files.splice(last + 1, 0, file);
+    if (!quiet) this.update();
+    return file;
+  }
+
+  removeFile(file, quiet = false) {
+    file.row.remove();
+    this.files.splice(this.files.indexOf(file), 1);
+    if (!quiet) this.update();
+  }
+
+  // The inputs of one file. extra: an added row of a repeatable file (it gets a ×).
+  makeFile(f, extra = false) {
+    const { multi, ownPath } = this;
+    {
       const pair = $('file-template').content.cloneNode(true);
       const file = { ...f, name: pair.querySelector('.p-file'), extSelect: pair.querySelector('.p-ext-select'), ext: pair.querySelector('.p-ext') };
       pair.querySelector('.p-file-title').textContent = f.title;
@@ -188,7 +248,20 @@ class Part {
           row.append(pathLabel);
         }
         row.append(pair, urlLabel);
-        this.$('urls').append(row);
+        if (this.repeatable) {
+          // A last, narrow column: × on added rows, empty on the others (so the rows line up).
+          row.classList.add('with-x');
+          const cell = document.createElement('div');
+          cell.className = 'file-x';
+          if (extra) {
+            cell.innerHTML = `<button type="button" class="file-remove" title="Remove this ${esc(f.title)}" aria-label="Remove this ${esc(f.title)}">×</button>`;
+            cell.firstElementChild.addEventListener('click', () => this.removeFile(file));
+          }
+          row.append(cell);
+        }
+        file.row = row;
+        if (extra) this.addRows[f.key].before(row);
+        else this.$('urls').append(row);
       } else {
         file.url.setAttribute('aria-label', `${f.label} file URL`);
         this.el.querySelector('.parts').append(pair);
@@ -210,27 +283,16 @@ class Part {
       });
       for (const input of [file.name, file.ext]) input.addEventListener('input', () => this.update());
       return file;
-    });
-    $('sections').append(this.el);
-
-    for (const k of LEVELS) {
-      this.$(k + '-select').addEventListener('change', e => {
-        const input = this.$(k);
-        if (e.target.value === OTHER) {
-          e.target.dataset.other = '1';
-          input.value = '';
-          input.hidden = false;
-          input.focus();
-        } else {
-          delete e.target.dataset.other;
-          input.value = e.target.value;
-        }
-        this.resetAfter(k);
-        this.refresh();
-      });
-      this.$(k).addEventListener('input', () => this.refresh());
     }
-    if (this.$('path')) this.$('path').addEventListener('input', () => this.update());
+  }
+
+  // Saved-value keys of the files, in order: the first row of a file is its key, more rows key#2, key#3, …
+  savedKeys() {
+    const seen = {};
+    return this.files.map(f => {
+      seen[f.key] = (seen[f.key] || 0) + 1;
+      return seen[f.key] === 1 ? f.key : `${f.key}#${seen[f.key]}`;
+    });
   }
 
   $(name) { return this.el.querySelector('.p-' + name); }
@@ -246,8 +308,16 @@ class Part {
     this.$('repo').value = saved.repo || '';
     if (this.$('path')) this.$('path').value = saved.path || '';
     const files = saved.files || {};
-    for (const f of this.files) {
-      const s = files[f.key] || {};
+    // As many rows of each repeatable file as were saved.
+    for (const def of this.defs.filter(d => d.repeat)) {
+      const want = 1 + Object.keys(files).filter(k => k.startsWith(def.key + '#')).length;
+      while (this.files.filter(x => x.key === def.key).length < want) this.addFile(def.key, true);
+      let rows;
+      while ((rows = this.files.filter(x => x.key === def.key)).length > want) this.removeFile(rows[rows.length - 1], true);
+    }
+    const keys = this.savedKeys();
+    for (const [i, f] of this.files.entries()) {
+      const s = files[keys[i]] || {};
       f.name.value = s.fileName || '';
       // Its own Path; saved before the boxes had one per file: the box's Path.
       if (f.path) f.path.value = typeof s.path === 'string' ? s.path : saved.path || '';
@@ -263,7 +333,7 @@ class Part {
   save() {
     store.set('part.' + this.key, JSON.stringify({
       project: this.$('project').value.trim(), repo: this.$('repo').value.trim(), ...(this.$('path') ? { path: this.$('path').value } : {}),
-      files: Object.fromEntries(this.files.map(f => [f.key, { fileName: f.name.value, extension: f.ext.value, ...(f.path ? { path: f.path.value } : {}) }])),
+      files: Object.fromEntries(this.files.map((f, i, all, keys = this.savedKeys()) => [keys[i], { fileName: f.name.value, extension: f.ext.value, ...(f.path ? { path: f.path.value } : {}) }])),
     }));
   }
 
@@ -353,7 +423,7 @@ const parts = [
   // Each has its own Path: base routes often live in another folder.
   new Part('route', 'Route', [
     { key: 'route', title: 'Endpoint File', label: 'Route', placeholder: 'portfolio-routes', extension: '.xml', pathPlaceholder: 'src/main/resources/routes' },
-    { key: 'routeRef', title: 'Reference File', label: 'Reference Route', placeholder: 'base-routes', extension: '.xml', pathPlaceholder: 'src/main/resources/routes/base' },
+    { key: 'routeRef', title: 'Reference File', label: 'Reference Route', placeholder: 'base-routes', extension: '.xml', repeat: true, pathPlaceholder: 'src/main/resources/routes/base' },
   ], { ownPath: true }),
   new Part('apictl', 'APIController', [
     { key: 'api', title: 'API File', label: 'API', placeholder: 'CustomerPortfolioApi' },

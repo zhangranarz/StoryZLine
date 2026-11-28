@@ -1051,7 +1051,8 @@ test('Reference Route file: base routes are found by <from uri>, else by route i
   assert.deepStrictEqual([audit.follow.id, audit.follow.by, audit.follow.ref, audit.follow.file, audit.follow.line], ['audit.write', 'from', true, 1, 6]);
   const mask = audit.follow.steps[0];
   assert.deepStrictEqual([mask.target, mask.follow.id, mask.follow.by, mask.follow.ref], ['direct:base.mask', 'base.mask', 'id', true]);
-  assert.deepStrictEqual(mask.follow.steps.map(x => `${x.kind} ${x.target} | ${x.detail} @${x.file}:${x.line}`), ['setHeader masked | constant true @1:15']);
+  assert.deepStrictEqual(mask.follow.steps.map(x => `${x.kind} ${x.target} | ${x.detail} @${x.file}:${x.line}`), ['setHeader masked | constant true @1:15', 'to direct:common.trace |  @1:18']);
+  assert.strictEqual(mask.follow.steps[1].missing, 'common.trace');  // in common-routes.xml, a second Reference File
   assert.strictEqual(flow.followed, 3);
   // A <from uri> name wins over a route id.
   const both = [
