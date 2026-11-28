@@ -141,7 +141,9 @@ pre { margin: 0; overflow: auto; max-height: 75vh; background: var(--code-bg); f
 /* A row per file in a box with several files: File, Extension, joined URL. */
 .file-row { display: grid; grid-template-columns: minmax(9rem, 1.3fr) minmax(6rem, .6fr) minmax(12rem, 4fr); gap: 0 10px; }
 .file-row > label { margin-bottom: 4px; }
-@media (max-width: 640px) { .file-row { grid-template-columns: 1fr; } }
+/* A row with its own Path first (the Route box). */
+.file-row.with-path { grid-template-columns: minmax(10rem, 2fr) minmax(9rem, 1.3fr) minmax(6rem, .6fr) minmax(12rem, 3.2fr); }
+@media (max-width: 640px) { .file-row, .file-row.with-path { grid-template-columns: 1fr; } }
 #flow .pill { white-space: nowrap; }
 
 /* Process diagram (SVG from shared/diagram.js); colours follow the page theme. */

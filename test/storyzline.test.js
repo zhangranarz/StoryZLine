@@ -1043,7 +1043,7 @@ test('Route flow: loops stop, comments and CDATA are handled, schemes and beans 
 });
 
 test('Reference Route file: base routes are found by <from uri>, else by route id', () => {
-  const files = ['payment-spl-1.1.xml', 'base-routes.xml'];
+  const files = ['payment-spl-1.1.xml', 'base/base-routes.xml'];
   const all = files.flatMap((f, i) => Camel.parseRoutes(sample(ROUTE_DIR + f)).map(route => ({ route, file: i, ref: i === 1 })));
   const start = all.find(x => x.route.id === 'payments.spl.submit');
   const flow = Camel.followRoutes(start.route, all, start.file);

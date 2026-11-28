@@ -141,16 +141,20 @@ const sameUrl = (a, b) => String(a || '').trim().replace(/\/+$/, '').toLowerCase
 // A box: shared URL / Project / Repository / Path, then one File + Extension pair per file.
 class Part {
   // files: [{ key, title, label, placeholder }]: title heads the File box, label names the file elsewhere.
-  constructor(key, legend, files) {
+  // opts.ownPath (several files): each file row has its own Path instead of one Path for the box.
+  constructor(key, legend, files, opts = {}) {
     this.key = key;
     this.el = $('part-template').content.firstElementChild.cloneNode(true);
     this.el.querySelector('legend').textContent = legend;
     // One file: URL, Project, Repository, Path, File, Extension on one line, the joined URL below.
     // Several files: URL, Project, Repository, Path on the first line, then a row per file with
-    // its File, Extension and joined URL.
+    // its File, Extension and joined URL (and its own Path first, with opts.ownPath).
     const multi = files.length > 1;
+    const ownPath = multi && !!opts.ownPath;
     this.el.querySelector('.parts').style.setProperty('--cols',
-      'minmax(6rem, 1.4fr) minmax(6rem, .7fr) minmax(8.5rem, 1fr) minmax(8rem, 2fr)' + (multi ? '' : ' minmax(7rem, 1.3fr) minmax(5.5rem, .7fr)'));
+      'minmax(6rem, 1.4fr) minmax(6rem, .7fr) minmax(8.5rem, 1fr)' + (ownPath ? '' : ' minmax(8rem, 2fr)') +
+      (multi ? '' : ' minmax(7rem, 1.3fr) minmax(5.5rem, .7fr)'));
+    if (ownPath) this.$('path').closest('label').hidden = true;
     if (multi) this.el.append(this.$('msg'));
     this.files = files.map(f => {
       const pair = $('file-template').content.cloneNode(true);
@@ -168,10 +172,21 @@ class Part {
       file.url.placeholder = `Bitbucket file URL, or a path such as src/main/java/…/${f.placeholder}.java`;
       if (multi) {
         const row = document.createElement('div');
-        row.className = 'file-row';
+        row.className = 'file-row' + (ownPath ? ' with-path' : '');
         const urlLabel = document.createElement('label');
         urlLabel.innerHTML = `<span>${esc(f.label)} URL</span>`;
         urlLabel.append(file.url);
+        if (ownPath) {
+          const pathLabel = document.createElement('label');
+          pathLabel.innerHTML = `<span>${esc(f.pathTitle || 'Path')}</span>`;
+          file.path = document.createElement('input');
+          file.path.className = 'p-file-path';
+          file.path.autocomplete = 'off';
+          file.path.placeholder = f.pathPlaceholder || 'src/main/…';
+          file.path.addEventListener('input', () => this.update());
+          pathLabel.append(file.path);
+          row.append(pathLabel);
+        }
         row.append(pair, urlLabel);
         this.$('urls').append(row);
       } else {
@@ -234,6 +249,8 @@ class Part {
     for (const f of this.files) {
       const s = files[f.key] || {};
       f.name.value = s.fileName || '';
+      // Its own Path; saved before the boxes had one per file: the box's Path.
+      if (f.path) f.path.value = typeof s.path === 'string' ? s.path : saved.path || '';
       if (typeof s.extension === 'string') f.ext.value = s.extension;
       // Show the extension in the dropdown, or under "Other…" when it isn't listed.
       let v = f.ext.value.trim().toLowerCase();
@@ -246,7 +263,7 @@ class Part {
   save() {
     store.set('part.' + this.key, JSON.stringify({
       project: this.$('project').value.trim(), repo: this.$('repo').value.trim(), path: this.$('path').value,
-      files: Object.fromEntries(this.files.map(f => [f.key, { fileName: f.name.value, extension: f.ext.value }])),
+      files: Object.fromEntries(this.files.map(f => [f.key, { fileName: f.name.value, extension: f.ext.value, ...(f.path ? { path: f.path.value } : {}) }])),
     }));
   }
 
@@ -298,7 +315,7 @@ class Part {
     for (const f of this.files) {
       const parts = {
         baseUrl: $('conn-url').value.trim(), project: this.$('project').value, repo: this.$('repo').value,
-        path: this.$('path').value, fileName: f.name.value, extension: f.ext.value,
+        path: f.path ? f.path.value : this.$('path').value, fileName: f.name.value, extension: f.ext.value,
       };
       if (!parts.fileName.trim()) { f.url.value = ''; continue; }  // no file: nothing to pull
       try {
@@ -333,10 +350,11 @@ const parts = [
   new Part('endpoint', 'Endpoint', [{ key: 'endpoint', title: 'File', label: 'Endpoint', placeholder: 'CustomerPortfolioEndpoint' }]),
   // Endpoint Route: searched for the Endpoint method's route. Reference Route File: the base routes the
   // routes call (by <from uri> or route id), used to follow and check those references.
+  // Each has its own Path: base routes often live in another folder.
   new Part('route', 'Route', [
-    { key: 'route', title: 'Endpoint Route', label: 'Route', placeholder: 'portfolio-routes', extension: '.xml' },
-    { key: 'routeRef', title: 'Reference Route File', label: 'Reference Route', placeholder: 'base-routes', extension: '.xml' },
-  ]),
+    { key: 'route', title: 'Endpoint Route', label: 'Route', placeholder: 'portfolio-routes', extension: '.xml', pathPlaceholder: 'src/main/resources/routes' },
+    { key: 'routeRef', title: 'Reference Route File', label: 'Reference Route', placeholder: 'base-routes', extension: '.xml', pathPlaceholder: 'src/main/resources/routes/base' },
+  ], { ownPath: true }),
   new Part('apictl', 'APIController', [
     { key: 'api', title: 'API File', label: 'API', placeholder: 'CustomerPortfolioApi' },
     { key: 'controller', title: 'Controller File', label: 'Controller', placeholder: 'CustomerPortfolioController' },
