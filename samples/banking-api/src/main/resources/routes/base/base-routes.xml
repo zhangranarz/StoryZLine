@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Demo base routes for StoryZLine (the Reference Route File): invented, not a real application's. -->
-<routes xmlns="http://camel.apache.org/schema/spring">
+<routes xmlns="http://camel.apache.org/schema/spring" xmlns:beans="http://www.springframework.org/schema/beans">
 
     <!-- Called as seda:audit.write: found by its <from uri>. -->
     <route id="audit.write">
@@ -17,4 +17,9 @@
         </setHeader>
         <to uri="direct:common.trace"/>
     </route>
+
+    <!-- Spring beans the routes use by name (bean:..., <process ref>): StoryZLine pulls their classes as Processors. -->
+    <beans:bean id="paymentRequestCheck" class="com.base.processor.PaymentRequestCheck"/>
+    <beans:bean id="validateSubmitProcessor" class="com.base.processor.ValidateSubmitProcessor"/>
+    <beans:bean id="auditService" class="com.base.service.AuditService"/>
 </routes>

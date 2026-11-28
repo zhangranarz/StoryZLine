@@ -534,8 +534,23 @@ $('pick-clear').addEventListener('click', () => {
 
 // ---- Pull the files and follow API path -> Endpoint -> API -> Controller ----
 
-const FILE_ORDER = ['route', 'endpoint', 'api', 'controller', 'command'];
+const FILE_ORDER = ['route', 'processor', 'endpoint', 'api', 'controller', 'command'];
 let view = null;  // { files, flows, selected, panes, whole }
+
+// Pulls one file from Bitbucket: c.url is a file URL or a path inside cfg's project and repository.
+async function fetchFile(c, cfg, conn) {
+  let loc;
+  try {
+    loc = Loc.resolveLocation(c.url, cfg);
+    const reply = await post('/api/get', { url: loc.rawUrl, connection: conn });
+    const problem = Loc.responseProblem(reply,
+      `File not found: ${loc.project}/${loc.repo}/${loc.path}${loc.ref ? ` at ${loc.ref}` : ''}.`);
+    if (problem) return { ...c, loc, error: problem, status: reply.status };
+    return { ...c, loc, content: reply.body };
+  } catch (err) {
+    return { ...c, loc, error: err.message };
+  }
+}
 
 $('form').addEventListener('submit', async e => {
   e.preventDefault();
@@ -555,19 +570,7 @@ $('form').addEventListener('submit', async e => {
   }
   setStatus(`Pulling ${chosen.length} file${chosen.length === 1 ? '' : 's'}…`);
   $('go').disabled = true;
-  const pull = async (c, cfg) => {
-    let loc;
-    try {
-      loc = Loc.resolveLocation(c.url, cfg);
-      const reply = await post('/api/get', { url: loc.rawUrl, connection: conn });
-      const problem = Loc.responseProblem(reply,
-        `File not found: ${loc.project}/${loc.repo}/${loc.path}${loc.ref ? ` at ${loc.ref}` : ''}.`);
-      if (problem) return { ...c, loc, error: problem, status: reply.status };
-      return { ...c, loc, content: reply.body };
-    } catch (err) {
-      return { ...c, loc, error: err.message };
-    }
-  };
+  const pull = (c, cfg) => fetchFile(c, cfg, conn);
   // An Endpoint File with "*" (e.g. payment*.xml): list its folder and pull every file that fits.
   const MAX_MATCHES = 50;
   const expand = async (c, cfg) => {
@@ -716,6 +719,13 @@ function render(results, apiPath, handlers = {}) {
   view = { files, routeFiles, routeHits, routeTab: 0, flows, byName, graph, apiPath, selected: 0, panes: {}, whole: {} };
   // For the Route flow: every <route> of every Route file, and the methods a bean step can lead to.
   view.camel = allOk.flatMap(({ f, i }) => Camel.parseRoutes(f.content).map(route => ({ route, file: i, ref: f.key === 'routeRef' })));
+  // Spring <bean id class> definitions in any Route or Reference File: bean names -> classes, whose
+  // Java files (Processors) are pulled when the selected row's Route flow uses them.
+  view.beans = new Map();
+  for (const { f, i } of allOk) for (const b of Camel.parseBeans(f.content)) if (!view.beans.has(b.id)) view.beans.set(b.id, { ...b, file: i });
+  view.procs = new Map();  // by project/repo/path: { cls, simple, path, def, methods, state, file? }
+  view.rowProcs = [];      // the selected row's, one tab each in the Processor pane
+  view.procTab = 0;
   view.linkable = [['controller', 'Controller'], ['api', 'API']].flatMap(([key, label]) =>
     (src(key) != null ? Java.findMethods(src(key)).map(m => ({ key, label, name: m.name, declLine: m.declLine })) : []));
   $('result').hidden = false;
@@ -778,7 +788,7 @@ function render(results, apiPath, handlers = {}) {
 
   $('panes').innerHTML = '';
   for (const key of FILE_ORDER) {
-    if (!files[key] && !(key === 'command' && flows.rows.some(r => r.commandAuto))) continue;
+    if (!files[key] && !(key === 'command' && flows.rows.some(r => r.commandAuto)) && !(key === 'processor' && view.beans.size)) continue;
     const pane = $('pane-template').content.firstElementChild.cloneNode(true);
     pane.dataset.pane = key;
     $('panes').append(pane);
@@ -798,10 +808,49 @@ function select(i) {
     const first = counts.findIndex(n => n > 0);
     view.routeTab = first >= 0 ? first : Math.max(0, view.routeFiles.findIndex(f => f.content != null));
   }
+  view.procTab = 0;
   for (const tr of $('flow').querySelectorAll('tbody tr[data-row]')) tr.classList.toggle('sel', Number(tr.dataset.row) === i);
+  drawRouteFlow();  // first: it finds the row's Processors for the Processor pane
   for (const key of Object.keys(view.panes)) drawPane(key);
   drawDiagram();
+}
+
+// The Processor of a bean definition: its Java file, worked out from the XML file that defines the
+// bean (same module, project and repository) and pulled once. A file already pulled (e.g. the
+// Controller) is linked to its own pane instead.
+function procFor(def, method) {
+  const host = view.routeFiles[def.file];
+  const simple = def.cls.split('.').pop().split('$')[0];
+  const path = host && host.loc ? Loc.javaPathFor(host.loc.path, def.cls) : null;
+  const key = path ? `${host.loc.project}/${host.loc.repo}/${path}` : `class:${def.cls}`;
+  let p = view.procs.get(key);
+  if (!p) {
+    p = { key, cls: def.cls, simple, path, def, methods: new Set(), state: path ? 'loading' : 'nopath' };
+    const same = path && Object.entries(view.files).find(([, f]) => f && f.loc && f.loc.path === path && f.loc.repo === host.loc.repo);
+    if (same) { p.pane = same[0]; p.state = 'pane'; }
+    view.procs.set(key, p);
+    if (p.state === 'loading') loadProc(p, host.loc);
+  }
+  p.methods.add(method || 'process');
+  return p;
+}
+
+async function loadProc(p, loc) {
+  const procs = view.procs;
+  const conn = connection();
+  const res = await fetchFile({ key: 'processor', label: 'Processor', url: p.path }, { ...conn, project: loc.project, repo: loc.repo, branch: loc.ref }, conn);
+  if (!view || view.procs !== procs) return;  // pulled again meanwhile
+  p.file = res;
+  p.state = res.error ? 'error' : 'ok';
   drawRouteFlow();
+  if (view.panes.processor) drawPane('processor');
+}
+
+// The line of a Processor's class declaration (1 if not found).
+function procClassLine(p) {
+  if (!p.file || p.file.content == null) return 1;
+  const rx = new RegExp(`\\b(class|interface|enum|record)\\s+${p.simple.replace(/\$/g, '\\$')}\\b`);
+  return p.file.content.split(/\r?\n/).findIndex(l => rx.test(l)) + 1 || 1;
 }
 
 // The Route flow of the selected row: each of its routes step by step, with direct:/seda:/vm: calls
@@ -810,6 +859,7 @@ function drawRouteFlow() {
   const row = view.flows.rows[view.selected];
   const starts = view.byName && row ? row.routes : [];
   const found = starts.map(x => view.camel.find(c => c.file === (x.file != null ? x.file : 0) && c.route.line === x.start)).filter(Boolean);
+  view.rowProcs = [];
   $('route-flow-card').hidden = !found.length;
   if (!found.length) return;
   const multi = view.routeFiles.length > 1;
@@ -827,10 +877,32 @@ function drawRouteFlow() {
     if (!refs.has(uri) || (refs.get(uri).missing && hit)) refs.set(uri, { uri, from: s, hit, missing: !hit });
   };
   const how = h => [h.ref ? 'Reference Route' : '', h.by === 'id' ? 'by route id' : ''].filter(Boolean).join(', ');
+  // A bean step (bean:x, <bean ref>, <process ref>, class:a.b.C): the class from <bean id="x" class>
+  // in the pulled files, with a link to its Java file (the Processor pane, or the pane that has it).
+  const beanHtml = s => {
+    const r = Camel.beanRef(s);
+    const methodLink = link(s.bean);
+    if (!r) return methodLink;
+    const def = r.cls ? { id: r.cls, cls: r.cls, file: s.file, line: s.line } : view.beans.get(r.name);
+    const uri = r.cls ? `class:${r.cls}` : `bean:${r.name}`;
+    if (!def) {
+      if (methodLink) return methodLink;  // e.g. a Controller found by its method's name
+      if (!refs.has(uri)) refs.set(uri, { uri, kind: 'bean', from: s, hit: null, missing: true });
+      return ` <span class="rf-note bad">no &lt;bean id="${esc(r.name)}" class="…"&gt; in the pulled files</span>`;
+    }
+    const p = procFor(def, r.method);
+    if (!refs.has(uri) || refs.get(uri).missing) refs.set(uri, { uri, kind: 'bean', from: s, hit: { ...def, p }, missing: p.state === 'error' || p.state === 'nopath' });
+    if (p.pane) return methodLink || ` <a href="#" class="rf-link" data-pane="${p.pane}" data-line="1">→ ${esc(p.simple)}</a>`;
+    if (p.path && !view.rowProcs.includes(p)) view.rowProcs.push(p);
+    const state = p.state === 'loading' ? ' <span class="rf-note">pulling…</span>'
+      : p.state === 'error' ? ` <span class="rf-note bad">${esc(p.file.error)}</span>`
+      : p.state === 'nopath' ? ' <span class="rf-note bad">can\'t tell where its Java file is</span>' : '';
+    return `${methodLink} <a href="#" class="rf-proc" data-proc="${esc(p.key)}" title="${esc(p.cls)}">→ class ${esc(p.simple)}</a>${state}`;
+  };
   const stepHtml = s => {
     steps++;
     let html = `<li><span class="rf-kind">${esc(s.kind)}</span>${s.target ? ` <code>${esc(s.target)}</code>` : ''}` +
-      `${s.detail ? ` <span class="rf-detail">${esc(s.detail)}</span>` : ''} ${at(s.file, s.line)}${link(s.bean)}`;
+      `${s.detail ? ` <span class="rf-detail">${esc(s.detail)}</span>` : ''} ${at(s.file, s.line)}${beanHtml(s)}`;
     if (s.missing) {
       missing++;
       check(s, null);
@@ -873,8 +945,22 @@ function referenceCheck(refs, at, how) {
   if (!refs.length) return '';
   const rows = refs.map(r => {
     const h = r.hit;
-    const where = h ? `route <code>${esc(h.id || '')}</code> ${at(h.file, h.line)}${how(h) ? ` <span class="rf-tag">${esc(how(h))}</span>` : ''}` : '<span class="rf-note bad">not found</span>';
-    return `<tr class="${h ? 'ok' : 'bad'}"><td>${h ? '✓' : '✗'}</td><td><code>${esc(r.uri)}</code></td><td>${at(r.from.file, r.from.line)}</td><td>${where}</td></tr>`;
+    let where;
+    if (r.kind === 'bean') {
+      // The bean: its <bean> definition, its class, and whether the class's Java file was pulled.
+      const p = h && h.p;
+      const file = !p ? '' : p.state === 'ok' ? ` <span class="rf-tag">${esc(p.path.split('/').pop())}</span>`
+        : p.state === 'loading' ? ' <span class="rf-note">pulling…</span>'
+        : p.state === 'pane' ? ` <span class="rf-tag">${esc(p.pane)}</span>`
+        : p.state === 'error' ? ` <span class="rf-note bad">Java file not found: ${esc(p.path)}</span>`
+        : ' <span class="rf-note bad">can\'t tell where its Java file is</span>';
+      where = h ? `class <code>${esc(h.cls)}</code>${h.id !== h.cls ? ` (&lt;bean&gt; ${at(h.file, h.line)})` : ''}${file}`
+        : '<span class="rf-note bad">no &lt;bean&gt; with this id in the pulled files</span>';
+    } else {
+      where = h ? `route <code>${esc(h.id || '')}</code> ${at(h.file, h.line)}${how(h) ? ` <span class="rf-tag">${esc(how(h))}</span>` : ''}` : '<span class="rf-note bad">not found</span>';
+    }
+    const ok = h && !r.missing;
+    return `<tr class="${ok ? 'ok' : 'bad'}"><td>${ok ? '✓' : '✗'}</td><td><code>${esc(r.uri)}</code></td><td>${at(r.from.file, r.from.line)}</td><td>${where}</td></tr>`;
   });
   return `<div class="rf-check"><div class="rf-head">Reference check</div><div class="table-wrap"><table>` +
     `<thead><tr><th></th><th>Reference</th><th>Called at</th><th>Found</th></tr></thead><tbody>${rows.join('')}</tbody></table></div></div>`;
@@ -901,6 +987,16 @@ function jumpTo(key, line, file) {
   }
 }
 $('route-flow').addEventListener('click', e => {
+  // → class X: its tab in the Processor pane, at the class declaration.
+  const proc = e.target.closest('a.rf-proc');
+  if (proc && view) {
+    e.preventDefault();
+    const i = view.rowProcs.findIndex(p => p.key === proc.dataset.proc);
+    if (i < 0) return;
+    view.procTab = i;
+    jumpTo('processor', procClassLine(view.rowProcs[i]));
+    return;
+  }
   const a = e.target.closest('a[data-line]');
   if (!a || !view) return;
   e.preventDefault();  // also keeps a link in a route's heading from hiding/expanding it
@@ -1001,6 +1097,15 @@ function rowParts(key, row) {
     const last = paneFile('route').content.split(/\r?\n/).length;
     return { ranges: mergeRanges(marks.map(n => [Math.max(1, n - 2), Math.min(last, n + 2)])), marks };
   }
+  if (key === 'processor') {
+    // The class declaration and the methods the routes call on it ('process' for a Processor).
+    const p = view.rowProcs[view.procTab];
+    if (!p || !p.file || p.file.content == null) return { ranges: [], marks: [] };
+    const classLine = procClassLine(p);
+    const ms = Java.findMethods(p.file.content).filter(m => p.methods.has(m.name));
+    if (!ms.length) return { ranges: [], marks: [classLine] };
+    return { ranges: mergeRanges([[classLine, classLine], ...ms.map(m => [m.startLine, m.endLine])]), marks: [classLine, ...ms.map(m => m.declLine)] };
+  }
   if (!row) return { ranges: [], marks: [] };
   // A Command named by @CommandHandler: the whole class, its declaration marked.
   if (key === 'command' && row.commandAuto) return { ranges: [], marks: [row.commandAuto.classLine] };
@@ -1024,7 +1129,28 @@ function paneFile(key) {
   const row = view.flows.rows[view.selected];
   if (key === 'command' && row && row.commandAuto) return row.commandAuto;
   if (key === 'route' && view.routeFiles.length > 1) return view.routeFiles[view.routeTab];
+  if (key === 'processor') {
+    const p = view.rowProcs[view.procTab];
+    return p && p.file ? { ...p.file, label: 'Processor' } : null;
+  }
   return view.files[key];
+}
+
+// The Processor pane's tabs: one per class the selected row's Route flow uses.
+function drawProcTabs(pane) {
+  let bar = pane.querySelector('.pane-tabs');
+  if (view.rowProcs.length < 2) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.className = 'pane-tabs';
+    bar.setAttribute('role', 'tablist');
+    bar.setAttribute('aria-label', 'Processor classes');
+    pane.querySelector('.pane-head').after(bar);
+  }
+  bar.innerHTML = view.rowProcs.map((p, k) => {
+    const badge = p.state === 'error' ? '<span class="tab-count bad">!</span>' : p.state === 'loading' ? '<span class="tab-count zero">…</span>' : '';
+    return `<button type="button" class="pane-tab" role="tab" data-proc-tab="${k}" aria-selected="${k === view.procTab}" title="${esc(p.cls)}">${esc(p.simple)} ${badge}</button>`;
+  }).join('');
 }
 
 // A row's routes in Route file number `tab` (all of them with a single Route file).
@@ -1076,13 +1202,17 @@ function drawPane(key) {
   const f = paneFile(key);
   const pane = view.panes[key];
   const q = cls => pane.querySelector('.' + cls);
+  if (key === 'processor') drawProcTabs(pane);
   if (!f) {
-    // Only @CommandHandler Commands were pulled, and this row has none.
-    q('pane-label').textContent = 'Command';
-    q('pane-file').textContent = '—';
-    q('pane-where').textContent = '';
+    // Only @CommandHandler Commands were pulled, and this row has none; or no Processor (yet).
+    const p = key === 'processor' && view.rowProcs[view.procTab];
+    q('pane-label').textContent = key === 'processor' ? 'Processor' : 'Command';
+    q('pane-file').textContent = p ? `${p.simple}.java` : '—';
+    q('pane-where').textContent = p ? p.path : '';
     q('pane-open').hidden = true;
-    q('pane-msg').textContent = 'The Controller method of this row has no @CommandHandler.';
+    q('pane-msg').textContent = key !== 'processor' ? 'The Controller method of this row has no @CommandHandler.'
+      : p ? `Pulling ${p.cls}…`
+      : 'No step of this row\'s Route flow uses a bean whose <bean id="…" class="…"> is in the pulled Route or Reference Files.';
     q('pane-msg').className = 'pane-msg note';
     q('pane-msg').hidden = false;
     q('pane-code').innerHTML = '';
@@ -1115,6 +1245,7 @@ function drawPane(key) {
   msg.textContent = key === 'command' && row && row.commandAuto
     ? `From @CommandHandler on ${row.commandAuto.handler.method}() in the Controller${row.commandAuto.handler.validator ? ` (validator ${row.commandAuto.handler.validator})` : ''}: the whole class.`
     : key === 'route' && f.key === 'routeRef' ? 'Reference Route file: the base routes that the routes call. Its routes are not matched to the Endpoint; see the reference check in Route flow.'
+    : key === 'processor' ? procMessage(view.rowProcs[view.procTab], ranges.length)
     : ranges.length ? ''
     : key === 'route' ? (view.byName && row
       ? `No <route>${view.routeFiles.length > 1 ? ' in this file' : ''} has a <from uri> ending in _${row.endpoint.name}: showing the whole file.`
@@ -1136,6 +1267,15 @@ function drawPane(key) {
     const el = q('pane-code').querySelector(`[data-n="${Math.min(...marks)}"]`);
     if (el) q('pane-code').scrollTop = el.offsetTop - 40;
   }
+}
+
+// Where a Processor came from: the <bean> that names its class, and which methods are shown.
+function procMessage(p, found) {
+  const host = view.routeFiles[p.def.file];
+  const where = host && host.loc ? `${host.loc.path.split('/').pop()}:${p.def.line}` : `line ${p.def.line}`;
+  const from = p.def.id !== p.cls ? `From <bean id="${p.def.id}"> in ${where}` : `Named in ${where}`;
+  const methods = [...p.methods].map(m => `${m}()`).join(', ');
+  return `${from}: class ${p.cls}. ${found ? `Showing the class line and ${methods}.` : `No ${methods} in it: showing the whole file.`}`;
 }
 
 // The text a pane shows: its found sections, or the whole file.
@@ -1170,6 +1310,10 @@ $('panes').addEventListener('click', async e => {
   if (e.target.closest('.route-hide')) {
     store.set('routeHideEmpty', e.target.checked ? 'yes' : 'no');
     drawPane('route');
+  } else if (tab && tab.dataset.procTab != null) {
+    view.procTab = Number(tab.dataset.procTab);
+    view.whole.processor = false;
+    drawPane('processor');
   } else if (tab) {
     view.routeTab = Number(tab.dataset.file);
     view.whole.route = false;
@@ -1181,7 +1325,7 @@ $('panes').addEventListener('click', async e => {
   } else if (e.target.closest('.pane-copy')) {
     try {
       await navigator.clipboard.writeText(shownText(key));
-      setStatus(`${view.files[key].label} copied.`);
+      setStatus(`${paneFile(key).label} copied.`);
     } catch {
       setStatus('Clipboard not available in this browser.', true);
     }

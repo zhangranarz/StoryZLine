@@ -74,7 +74,7 @@
       step.target = (a.ref || a.beanType || '') + (a.method ? `.${a.method}()` : '');
       step.bean = { bean: a.ref || a.beanType || '', method: a.method || '' };
     } else if (n.name !== 'log') {
-      step.target = a.uri || a.ref || a.name || a.type || a.exceptionType || a.method || '';
+      step.target = a.uri || a.url || a.ref || a.name || a.type || a.exceptionType || a.method || '';
     }
     step.detail = a.message || '';
     const rest = exprs.map(expressionText).filter(Boolean).join('; ');
@@ -159,7 +159,43 @@
     return { steps: result, followed };
   }
 
-  const api = { parseXml, parseRoutes, followRoutes, internalName, beanCall };
+  // Spring bean definitions in a file: <bean id="x" class="a.b.C"/> (also <beans:bean>, and the
+  // names in name="x, y"): [{ id, cls, line }].
+  function parseBeans(src) {
+    const beans = [];
+    const walk = node => {
+      for (const c of node.children) {
+        if (c.name === 'bean' && c.attrs.class) {
+          const ids = [c.attrs.id, ...String(c.attrs.name || '').split(/[\s,;]+/)].filter(Boolean);
+          for (const id of [...new Set(ids)]) beans.push({ id, cls: c.attrs.class.trim(), line: c.line });
+        }
+        walk(c);
+      }
+    };
+    walk(parseXml(src));
+    return beans;
+  }
+
+  // The bean a step uses: { name } to look up in the bean definitions, or { cls } when the step names
+  // the class itself; with the method it calls ('process' for a Processor), else ''.
+  //   <to uri="bean:x?method=m"/>, <bean ref="x" method="m"/>, <bean beanType="a.b.C"/>,
+  //   <process ref="x"/>, <to uri="class:a.b.C"/>, <to uri="ref:x"/>
+  function beanRef(step) {
+    if (step.kind === 'process' && step.target) return { name: step.target, method: 'process' };
+    if (step.kind === 'bean' && step.bean && step.bean.bean) {
+      const b = step.bean.bean;
+      return /\./.test(b) ? { cls: b, method: step.bean.method } : { name: b, method: step.bean.method };
+    }
+    if (!SENDERS.has(step.kind)) return null;
+    const b = beanCall(step);
+    if (b) return { name: b.bean, method: b.method };
+    const m = /^(class|ref):([^?]+)(?:\?(?:.*&)?method=([^&]+))?/i.exec(step.target);
+    if (!m) return null;
+    const method = m[3] ? decodeURIComponent(m[3]).replace(/\(.*$/, '') : '';
+    return m[1].toLowerCase() === 'class' ? { cls: m[2], method } : { name: m[2], method };
+  }
+
+  const api = { parseXml, parseRoutes, followRoutes, internalName, beanCall, parseBeans, beanRef };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else window.StoryZCamel = api;
 })();

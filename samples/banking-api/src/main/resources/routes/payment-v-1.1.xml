@@ -5,6 +5,7 @@
     <route id="payments.v1.submit">
         <from uri="direct:payments.v1_processSubmitApi"/>
         <setHeader name="apiVersion"><constant>1.1</constant></setHeader>
+        <to uri="bean:validateSubmitProcessor"/>
         <to uri="bean:paymentController?method=processSubmitApi"/>
     </route>
 </routes>

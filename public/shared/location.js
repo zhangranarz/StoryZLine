@@ -138,6 +138,27 @@
     return [...(i >= 0 ? segs.slice(0, i) : segs), 'processing', 'impl'].join('/');
   }
 
+  // The Java file of a class named in an XML file (e.g. a Spring <bean class>), in the same module:
+  // the XML's folders before src/main (or before resources), then src/main/java and the package.
+  //   spl-src/src/main/resources/AA.xml + com.base.procssor.ValidateSubmitProcessor
+  //   -> spl-src/src/main/java/com/base/procssor/ValidateSubmitProcessor.java
+  // An inner class (a.b.Outer$Inner) is in Outer.java. Returns null for a name that is not a class.
+  function javaPathFor(xmlFilePath, className) {
+    const cls = String(className || '').trim();
+    if (!/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(cls)) return null;
+    const segs = String(xmlFilePath || '').replace(/\\/g, '/').split('/').filter(Boolean);
+    segs.pop();  // the file name
+    let root;
+    const lower = segs.map(s => s.toLowerCase());
+    const src = lower.findIndex((s, i) => s === 'src' && lower[i + 1] === 'main');
+    if (src >= 0) root = segs.slice(0, src);
+    else if (lower.includes('resources')) root = segs.slice(0, lower.lastIndexOf('resources'));
+    else root = segs;
+    const parts = cls.split('.');
+    parts[parts.length - 1] = parts[parts.length - 1].split('$')[0];
+    return [...root, 'src', 'main', 'java', ...parts].join('/') + '.java';
+  }
+
   // A cheap authenticated request that confirms the URL and login work.
   function loginCheckUrl(cfg) {
     checkBaseUrl(cfg);
@@ -212,7 +233,7 @@
 
   const api = {
     resolveLocation, buildFileUrl, commandPathFrom, loginCheckUrl, responseProblem, isCloud, LocationError,
-    hasWildcard, globToRegExp, folderListUrl, parseFolderListing,
+    hasWildcard, globToRegExp, folderListUrl, parseFolderListing, javaPathFor,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else window.StoryZLocation = api;

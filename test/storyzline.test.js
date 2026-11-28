@@ -1062,3 +1062,55 @@ test('Reference Route file: base routes are found by <from uri>, else by route i
   const f = Camel.followRoutes({ steps: [{ kind: 'to', target: 'direct:x', line: 1, children: [] }] }, both, 0);
   assert.deepStrictEqual([f.steps[0].follow.id, f.steps[0].follow.by], ['y', 'from']);
 });
+
+// ---- Beans: bean:x -> <bean id="x" class="..."> -> the class's Java file ----
+
+test('the Java file of a bean class sits in the XML file\'s module, under src/main/java', () => {
+  const { javaPathFor } = require('../public/shared/location');
+  // The example: AA.xml in spl-src, class com.base.procssor.ValidateSubmitProcessor.
+  assert.strictEqual(javaPathFor('spl-src/src/main/resources/AA.xml', 'com.base.procssor.ValidateSubmitProcessor'),
+    'spl-src/src/main/java/com/base/procssor/ValidateSubmitProcessor.java');
+  assert.strictEqual(javaPathFor('src/main/resources/routes/base/base-routes.xml', 'com.base.processor.PaymentRequestCheck'),
+    'src/main/java/com/base/processor/PaymentRequestCheck.java');
+  assert.strictEqual(javaPathFor('svc/config/resources/camel/x.xml', 'a.B'), 'svc/config/src/main/java/a/B.java');  // no src/main: before resources
+  assert.strictEqual(javaPathFor('x.xml', 'a.b.Outer$Inner'), 'src/main/java/a/b/Outer.java');
+  assert.strictEqual(javaPathFor('src/main/resources/x.xml', '${processor.class}'), null);  // a placeholder, not a class
+});
+
+test('bean definitions and the beans route steps use', () => {
+  const xml = sample(ROUTE_DIR + 'base/base-routes.xml');
+  assert.deepStrictEqual(Camel.parseBeans(xml).map(b => `${b.id}=${b.cls} @${b.line}`), [
+    'paymentRequestCheck=com.base.processor.PaymentRequestCheck @22',
+    'validateSubmitProcessor=com.base.processor.ValidateSubmitProcessor @23',
+    'auditService=com.base.service.AuditService @24',
+  ]);
+  assert.deepStrictEqual(Camel.parseBeans('<beans><bean name="a, b" class="x.Y"/><bean id="noClass"/></beans>').map(b => b.id + '=' + b.cls), ['a=x.Y', 'b=x.Y']);
+  // Route steps: bean:, url= (as some files have it), <process ref>, <bean ref/beanType>, class:, ref:.
+  const routes = Camel.parseRoutes([
+    '<routes><route id="r"><from uri="direct:r"/>',
+    '<to url="bean:validateSubmitProcessor"/>',
+    '<process ref="paymentRequestCheck"/>',
+    '<bean ref="auditService" method="write"/>',
+    '<bean beanType="a.b.Tool" method="run"/>',
+    '<to uri="class:a.b.C?method=go(${body})"/>',
+    '<to uri="ref:other"/>',
+    '<to uri="direct:x"/>',
+    '<log message="x"/>',
+    '</route></routes>',
+  ].join('\n'));
+  assert.deepStrictEqual(routes[0].steps.map(st => JSON.stringify(Camel.beanRef(st))), [
+    '{"name":"validateSubmitProcessor","method":""}',
+    '{"name":"paymentRequestCheck","method":"process"}',
+    '{"name":"auditService","method":"write"}',
+    '{"cls":"a.b.Tool","method":"run"}',
+    '{"cls":"a.b.C","method":"go"}',
+    '{"name":"other","method":""}',
+    'null', 'null',
+  ]);
+  // Each demo bean's class has its Java file where javaPathFor points.
+  const { javaPathFor } = require('../public/shared/location');
+  for (const b of Camel.parseBeans(xml)) {
+    const file = path.join(SAMPLES, 'banking-api', javaPathFor('src/main/resources/routes/base/base-routes.xml', b.cls));
+    assert.ok(fs.existsSync(file), file);
+  }
+});
