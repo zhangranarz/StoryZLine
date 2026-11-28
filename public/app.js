@@ -334,6 +334,7 @@ const parts = [
     { key: 'api', title: 'API File', label: 'API', placeholder: 'CustomerPortfolioApi' },
     { key: 'controller', title: 'Controller File', label: 'Controller', placeholder: 'CustomerPortfolioController' },
   ]),
+  new Part('command', 'Command', [{ key: 'command', title: 'File', label: 'Command', placeholder: 'CustomerPortfolioCommand' }]),
 ];
 // A new box starts with the Endpoint's project and repository.
 const endpointSaved = store.json('part.endpoint') || {};
@@ -438,7 +439,7 @@ $('pick-clear').addEventListener('click', () => {
 
 // ---- Pull the files and follow API path -> Endpoint -> API -> Controller ----
 
-const FILE_ORDER = ['route', 'endpoint', 'api', 'controller'];
+const FILE_ORDER = ['route', 'endpoint', 'api', 'controller', 'command'];
 let view = null;  // { files, flows, selected, panes, whole }
 
 $('form').addEventListener('submit', async e => {
@@ -490,7 +491,7 @@ $('form').addEventListener('submit', async e => {
 function render(results, apiPath) {
   const files = Object.fromEntries(results.map(r => [r.key, r]));
   const src = k => (files[k] && files[k].content != null ? files[k].content : null);
-  const flows = Java.traceFlows({ endpoint: src('endpoint'), api: src('api'), controller: src('controller'), apiPath });
+  const flows = Java.traceFlows({ endpoint: src('endpoint'), api: src('api'), controller: src('controller'), command: src('command'), apiPath });
   // The route file's lines for this API (the same for every row).
   const route = src('route') != null ? Java.findRouteLines(src('route'), apiPath, [flows.classes.endpoint]) : null;
   view = { files, flows, route, selected: 0, panes: {}, whole: {} };
@@ -508,17 +509,23 @@ function render(results, apiPath) {
       <td>${r.endpoint ? `${esc(r.endpoint.name)}()` : none}</td>
       <td>${src('api') != null ? names(r.api) : notPulled}</td>
       <td>${src('controller') != null ? names(r.controller) : notPulled}</td>
+      <td>${src('command') != null ? names(r.command) : notPulled}</td>
     </tr>`).join('') ||
-    `<tr><td colspan="6" class="none">${src('endpoint') == null ? 'The Endpoint file was not pulled.' : apiPath ? 'No Endpoint mapping matches this API.' : 'No mappings found in the Endpoint.'}</td></tr>`;
+    `<tr><td colspan="7" class="none">${src('endpoint') == null ? 'The Endpoint file was not pulled.' : apiPath ? 'No Endpoint mapping matches this API.' : 'No mappings found in the Endpoint.'}</td></tr>`;
 
-  const linked = flows.rows.filter(r => r.api.length || r.controller.length).length;
+  const linked = flows.rows.filter(r => r.api.length || r.controller.length || r.command.length).length;
   $('flow-state').textContent = flows.rows.length ? `${flows.rows.length} row${flows.rows.length === 1 ? '' : 's'}, ${linked} linked past the Endpoint` : '';
   $('flow-state').className = 'state' + (linked ? ' ok' : '');
   const notes = [];
   if (!apiPath && src('endpoint') != null) notes.push('No API given: listing every mapping in the Endpoint.');
   if (apiPath && src('endpoint') != null && !flows.rows.length) notes.push('Showing the whole Endpoint file.');
   const called = [flows.classes.api, flows.classes.controller].filter(Boolean);
-  if (called.length && flows.rows.length && !linked) notes.push(`No calls to ${called.join(' or ')} were found in the Endpoint methods.`);
+  if (called.length && flows.rows.length && !flows.rows.some(r => r.api.length || r.controller.length)) {
+    notes.push(`No calls to ${called.join(' or ')} were found in the Endpoint methods.`);
+  }
+  if (flows.classes.command && flows.rows.length && !flows.rows.some(r => r.command.length)) {
+    notes.push(`No calls to ${flows.classes.command} were found in the ${src('controller') != null ? 'Controller' : 'Endpoint'} methods.`);
+  }
   if (route) {
     const n = route.lines.length;
     notes.push(!n ? 'Route: no line matches this API.'
@@ -573,7 +580,10 @@ function rowParts(key, row) {
     if (prev && s <= prev[1] + 1) prev[1] = Math.max(prev[1], e);
     else ranges.push([s, e]);
   }
-  const marks = found.map(m => m.declLine).concat(key === 'endpoint' ? row.callLines : []);
+  // Also mark the call lines: the Endpoint's calls onward, and the Command calls where they are.
+  const marks = found.map(m => m.declLine)
+    .concat(key === 'endpoint' ? row.callLines : [])
+    .concat(key === row.commandFrom ? row.commandCallLines : []);
   return { ranges, marks };
 }
 

@@ -528,7 +528,7 @@ test('the API path leads through the demo Endpoint to the API and Controller met
   assert.deepStrictEqual(flow('/enq/customer/portfolio/1/export').rows.map(text), ['exact GET /enq/customer/portfolio/{customerId}/export | exportPortfolio -> exportCsv -> exportCsv']);
   assert.deepStrictEqual(flow('/enq/customer/unknown').rows, []);
   assert.strictEqual(flow('').rows.length, 5);  // no API: every mapping in the Endpoint
-  assert.deepStrictEqual(flow('').classes, { endpoint: 'CustomerPortfolioEndpoint', api: 'CustomerPortfolioApi', controller: 'CustomerPortfolioController' });
+  assert.deepStrictEqual(flow('').classes, { endpoint: 'CustomerPortfolioEndpoint', api: 'CustomerPortfolioApi', controller: 'CustomerPortfolioController', command: null });
 
   // Sections cover the whole method; the Endpoint's calls on portfolioApi are marked, not audit.log().
   const get = flow('/enq/customer/portfolio/1').rows[0];
@@ -587,4 +587,37 @@ test('the route file lines for an API: path patterns, with the context path on e
   const props = 'route.portfolio.url=enq/customer/portfolio\nroute.summary.url=enq/customer/summary\nother=enq/customer';
   assert.deepStrictEqual(findRouteLines(props, '/spl-banking/enq/customer/portfolio/12345'), { lines: [1], how: 'text' });
   assert.deepStrictEqual(findRouteLines(props, '/enq/customer/x'), { lines: [], how: null });  // "enq/customer" alone is too common
+});
+
+// ---- Command ----
+
+const CMD_FILE = 'ecomm-services/src/main/java/com/example/ecomm/enq/command/CustomerPortfolioCommand.java';
+
+test('the demo chain continues from the Controller into the Command', () => {
+  const { rows, classes } = traceFlows({ endpoint: sample(SPRING), api: sample(API_FILE), controller: sample(CTL_FILE), command: sample(CMD_FILE) });
+  assert.strictEqual(classes.command, 'CustomerPortfolioCommand');
+  assert.deepStrictEqual(rows.map(r => `${r.endpoint.name} -> ${r.controller.map(c => c.name).join('+')} -> ${r.command.map(c => c.name).join('+')} (${r.commandFrom})`), [
+    'getPortfolio -> getPortfolio -> enquire (controller)',
+    'updatePortfolio -> validate+savePortfolio -> update (controller)',
+    'summary -> summary -> summarise (controller)',
+    'removeHolding -> removeHolding -> deleteHolding (controller)',
+    'exportPortfolio -> exportCsv -> holdings (controller)',
+  ]);
+  const ctlLines = sample(CTL_FILE).split(/\r?\n/);
+  assert.deepStrictEqual(rows[0].commandCallLines.map(n => ctlLines[n - 1].trim()), ['Portfolio portfolio = command.enquire(customerId);']);
+  const cmdLines = sample(CMD_FILE).split(/\r?\n/);
+  assert.match(cmdLines[rows[0].command[0].startLine - 1], /Host enquiry: the portfolio/);
+  assert.match(cmdLines[rows[0].command[0].endLine - 1], /^ {4}\}$/);
+});
+
+test('a Command called straight from the Endpoint, through a field or a new object', () => {
+  const cmd = 'public class Cmd {\n  public R run(int id) { return null; }\n}';
+  const viaField = '@RestController\npublic class E {\n  private final Cmd cmd;\n  @GetMapping("/x")\n  public R x() { return cmd.run(1); }\n}';
+  const viaNew = '@RestController\npublic class E {\n  @GetMapping("/x")\n  public R x() { return new Cmd(host).run(1); }\n}';
+  for (const ep of [viaField, viaNew]) {
+    const [row] = traceFlows({ endpoint: ep, command: cmd }).rows;
+    assert.deepStrictEqual([row.command.map(c => c.name), row.commandFrom, row.commandCallLines], [['run'], 'endpoint', [ep.split('\n').findIndex(l => l.includes('.run(')) + 1]]);
+  }
+  // No Command file: nothing to look up.
+  assert.deepStrictEqual(traceFlows({ endpoint: viaField }).rows[0].command, []);
 });

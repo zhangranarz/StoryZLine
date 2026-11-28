@@ -249,6 +249,40 @@ const samePath = (a, b) => {
 };
 const section = m => m && { name: m.name || m.methodName, declLine: m.declLine, startLine: m.startLine, endLine: m.endLine };
 
+// Names of fields, parameters and locals in `code` typed as one of `types`.
+function typedVars(code, types) {
+  return types.filter(Boolean).flatMap(type =>
+    [...code.matchAll(new RegExp(`\\b${type}(?:<[^>]*>)?\\s+([A-Za-z_$][\\w$]*)\\s*[;=,)]`, 'g'))].map(x => x[1]));
+}
+
+// The calls inside `method` (from findMethods on `code`) worth following: on one of `vars` or,
+// when there are none, to a method name accepted by `known`. Returns [{ called, receiver, line }].
+function callsIn(code, lineOf, method, vars, known) {
+  if (method.bodyStart == null) return [];
+  const body = code.slice(method.bodyStart, method.bodyEnd + 1);
+  const calls = [];
+  // receiver.method( or something().method( (the receiver is then a call result, e.g. new X().run()).
+  for (const c of body.matchAll(/(?:([A-Za-z_$][\w$]*)|\))\s*\.\s*([A-Za-z_$][\w$]*)\s*\(/g)) {
+    const [, receiver, called] = c;
+    if (vars.length ? !vars.includes(receiver) : !known(called)) continue;
+    calls.push({ called, receiver: receiver || '…', line: lineOf(method.bodyStart + c.index) });
+  }
+  return calls;
+}
+
+// Adds the methods of `callees` named by `calls` to `list` (once each); returns the raw methods added.
+function collect(list, callees, calls) {
+  const added = [];
+  for (const c of calls) {
+    for (const target of callees.filter(x => x.name === c.called)) {
+      if (list.some(x => x.declLine === target.declLine)) continue;
+      list.push({ ...section(target), call: `${c.receiver}.${c.called}()` });
+      added.push(target);
+    }
+  }
+  return added;
+}
+
 // Follows an eComm API through its code. Each source is a file's text, or null if not pulled.
 //   API path -> Endpoint: the Endpoint methods whose mapping matches apiPath (exact, or the end of
 //                         it); with no apiPath, every mapped Endpoint method.
@@ -257,29 +291,40 @@ const section = m => m && { name: m.name || m.methodName, declLine: m.declLine, 
 //                         variable, calls to any method those files have). Each called method is
 //                         looked up by name in the API file and in the Controller file (its
 //                         implementation when the Controller implements the API).
-// Returns { rows, classes }. Each row: { methods, paths, match, endpoint, api[], controller[], callLines[] }.
-function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controller: controllerSrc = null, apiPath = '' } = {}) {
+//   Controller -> Command: the same, from those Controller methods (or from the Endpoint method
+//                         when no Controller file is pulled) into the Command file.
+// Returns { rows, classes }. Each row: { methods, paths, match, endpoint, api[], controller[],
+// command[], callLines[] (Endpoint lines), commandCallLines[] and commandFrom ('controller' or
+// 'endpoint': the file those lines are in) }.
+function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controller: controllerSrc = null, command: commandSrc = null, apiPath = '' } = {}) {
   const classes = {
     endpoint: endpointSrc && typeName(endpointSrc),
     api: apiSrc && typeName(apiSrc),
     controller: controllerSrc && typeName(controllerSrc),
+    command: commandSrc && typeName(commandSrc),
   };
   if (!endpointSrc) return { rows: [], classes };
 
+  const ownMethods = (src, cls) => (src ? findMethods(src).filter(x => x.name !== cls) : []);
+  const callees = {
+    api: ownMethods(apiSrc, classes.api),
+    controller: ownMethods(controllerSrc, classes.controller),
+    command: ownMethods(commandSrc, classes.command),
+  };
+  const ep = { code: stripComments(endpointSrc) };
+  ep.lineOf = lineIndex(ep.code);
+  ep.vars = typedVars(ep.code, [classes.api, classes.controller]);
+  ep.commandVars = typedVars(ep.code, [classes.command]);
+  const ctl = controllerSrc ? { code: stripComments(controllerSrc) } : null;
+  if (ctl) {
+    ctl.lineOf = lineIndex(ctl.code);
+    ctl.commandVars = typedVars(ctl.code, [classes.command]);
+  }
+  const has = list => name => list.some(x => x.name === name);
+
   const epEps = findEndpoints(endpointSrc);
   const epMethods = findMethods(endpointSrc);
-  const callees = {
-    api: apiSrc ? findMethods(apiSrc).filter(x => x.name !== classes.api) : [],
-    controller: controllerSrc ? findMethods(controllerSrc).filter(x => x.name !== classes.controller) : [],
-  };
-  const epCode = stripComments(endpointSrc);
-  const epLineOf = lineIndex(epCode);
-
-  // Names of fields, parameters and locals in the Endpoint typed as the API or the Controller.
-  const typedVars = [classes.api, classes.controller].filter(Boolean).flatMap(type =>
-    [...epCode.matchAll(new RegExp(`\\b${type}(?:<[^>]*>)?\\s+([A-Za-z_$][\\w$]*)\\s*[;=,)]`, 'g'))].map(x => x[1]));
-  const knownName = name => callees.api.some(x => x.name === name) || callees.controller.some(x => x.name === name);
-  const methodOf = ep => epMethods.find(x => x.name === ep.methodName && x.endLine >= ep.declLine && x.startLine <= ep.declLine);
+  const methodOf = e => epMethods.find(x => x.name === e.methodName && x.endLine >= e.declLine && x.startLine <= e.declLine);
 
   // Starting points: Endpoint mappings matching the API path, or all of them.
   const starts = [];
@@ -295,31 +340,28 @@ function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controll
 
   const rows = starts.map(s => {
     const endpoint = methodOf(s.ep) || s.ep;
-    const found = { api: [], controller: [] };
-    const callLines = [];
-    if (endpoint.bodyStart != null) {
-      const body = epCode.slice(endpoint.bodyStart, endpoint.bodyEnd + 1);
-      // receiver.method( or something().method( (the receiver is then a call result).
-      for (const c of body.matchAll(/(?:([A-Za-z_$][\w$]*)|\))\s*\.\s*([A-Za-z_$][\w$]*)\s*\(/g)) {
-        const [, receiver, called] = c;
-        if (typedVars.length ? !typedVars.includes(receiver) : !knownName(called)) continue;
-        callLines.push(epLineOf(endpoint.bodyStart + c.index));
-        for (const k of ['api', 'controller']) {
-          for (const target of callees[k].filter(x => x.name === called)) {
-            if (!found[k].some(x => x.declLine === target.declLine)) found[k].push({ ...section(target), call: `${receiver || '…'}.${called}()` });
-          }
-        }
+    const row = { methods: s.methods, paths: s.paths, match: s.match, endpoint: section(endpoint), api: [], controller: [], command: [], callLines: [], commandCallLines: [] };
+
+    // Endpoint -> API and Controller.
+    const epCalls = callsIn(ep.code, ep.lineOf, endpoint, ep.vars, name => has(callees.api)(name) || has(callees.controller)(name));
+    collect(row.api, callees.api, epCalls);
+    const ctlTargets = collect(row.controller, callees.controller, epCalls);
+    row.callLines = epCalls.map(c => c.line);
+
+    // Controller (or, without one, Endpoint) -> Command.
+    if (callees.command.length) {
+      const fromController = Boolean(ctl && ctlTargets.length);
+      const from = fromController ? { file: ctl, methods: ctlTargets } : { file: ep, methods: [endpoint] };
+      row.commandFrom = fromController ? 'controller' : 'endpoint';
+      for (const m of from.methods) {
+        const calls = callsIn(from.file.code, from.file.lineOf, m, from.file.commandVars, has(callees.command));
+        collect(row.command, callees.command, calls);
+        row.commandCallLines.push(...calls.map(c => c.line));
       }
     }
-    return {
-      methods: s.methods,
-      paths: s.paths,
-      match: s.match,
-      endpoint: section(endpoint),
-      api: found.api,
-      controller: found.controller,
-      callLines: [...new Set(callLines)],
-    };
+    row.callLines = [...new Set(row.callLines)];
+    row.commandCallLines = [...new Set(row.commandCallLines)];
+    return row;
   });
   return { rows, classes };
 }

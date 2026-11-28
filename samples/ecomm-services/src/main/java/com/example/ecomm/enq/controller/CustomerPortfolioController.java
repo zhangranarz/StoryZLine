@@ -1,23 +1,25 @@
 package com.example.ecomm.enq.controller;
 
+import com.example.ecomm.enq.command.CustomerPortfolioCommand;
 import org.springframework.stereotype.Component;
 
 /**
  * Business logic behind CustomerPortfolioEndpoint (demo file for StoryZLine; not real code).
+ * Backend calls go through CustomerPortfolioCommand.
  */
 @Component
 public class CustomerPortfolioController implements CustomerPortfolioApi {
 
-    private final PortfolioRepository repository;
+    private final CustomerPortfolioCommand command;
 
-    public CustomerPortfolioController(PortfolioRepository repository) {
-        this.repository = repository;
+    public CustomerPortfolioController(CustomerPortfolioCommand command) {
+        this.command = command;
     }
 
     /** Loads a portfolio and converts it to the requested currency. */
     @Override
     public Portfolio getPortfolio(String customerId, String currency) {
-        Portfolio portfolio = repository.find(customerId);
+        Portfolio portfolio = command.enquire(customerId);
         return portfolio.convertTo(currency);
     }
 
@@ -30,23 +32,23 @@ public class CustomerPortfolioController implements CustomerPortfolioApi {
 
     @Override
     public void savePortfolio(String customerId, Portfolio portfolio) {
-        repository.save(customerId, portfolio);
+        command.update(customerId, portfolio);
     }
 
     @Override
     public Summary summary() {
-        return new Summary(repository.count(), repository.totalValue());
+        return command.summarise();
     }
 
     @Override
     public void removeHolding(String customerId, String holdingId) {
-        repository.deleteHolding(customerId, holdingId);
+        command.deleteHolding(customerId, holdingId);
     }
 
     @Override
     public byte[] exportCsv(String customerId) {
         StringBuilder csv = new StringBuilder("holding,quantity\n");
-        for (Holding h : repository.find(customerId).getHoldings()) {
+        for (Holding h : command.holdings(customerId)) {
             csv.append(h.getId()).append(',').append(h.getQuantity()).append('\n');
         }
         return csv.toString().getBytes();
