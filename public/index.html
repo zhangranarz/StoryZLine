@@ -29,8 +29,11 @@
           <span>API</span>
           <input id="api" name="api" placeholder="/spl-banking/enq/customer/portfolio/12345" autocomplete="off">
         </label>
-        <!-- Endpoint and APIController sections, built from #part-template -->
-        <div id="sections"></div>
+        <!-- One collapsible section holding the Endpoint, Route, APIController and Command boxes (from #part-template) -->
+        <details id="files-section" class="files-section" open>
+          <summary><span class="files-title">Files</span> <span class="rf-toggle" aria-hidden="true"></span> <span id="files-summary" class="files-summary"></span></summary>
+          <div id="sections"></div>
+        </details>
         <div class="actions">
           <button id="go" type="submit">Pull from Bitbucket</button>
           <span id="status" role="status"></span>

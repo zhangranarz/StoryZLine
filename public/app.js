@@ -396,8 +396,21 @@ class Part {
     }
     this.$('msg').textContent = problems.join(' ');
     this.$('msg').hidden = !problems.length;
+    drawFilesSummary();
   }
 }
+
+// The Files section (Endpoint, Route, APIController, Command): Expand / Hide, remembered in this
+// browser; its heading lists the files filled in, so a hidden section still shows what will be pulled.
+function drawFilesSummary() {
+  const boxes = [...document.querySelectorAll('#sections fieldset')].map(fs => {
+    const names = [...fs.querySelectorAll('.p-file')].map(i => i.value.trim()).filter(Boolean);
+    return names.length ? `${fs.querySelector('legend').textContent}: ${names.join(', ')}` : '';
+  }).filter(Boolean);
+  $('files-summary').textContent = boxes.length ? boxes.join(' · ') : 'no files filled in';
+}
+$('files-section').open = store.get('filesSection') !== 'hidden';
+$('files-section').addEventListener('toggle', () => store.set('filesSection', $('files-section').open ? 'open' : 'hidden'));
 
 // Saved values from earlier versions: the single-file Endpoint box, and the Controller box.
 for (const [from, to, fileKey] of [['part.endpoint', 'part.endpoint', 'endpoint'], ['part.controller', 'part.apictl', 'controller']]) {
@@ -565,6 +578,7 @@ $('form').addEventListener('submit', async e => {
   const chosen = parts.flatMap(p => p.fileUrls());
   if (!chosen.length) {
     setStatus('Fill in the Endpoint File (and the API and Controller Files).', true);
+    $('files-section').open = true;
     parts[0].files[0].name.focus();
     return;
   }

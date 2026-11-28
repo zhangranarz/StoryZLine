@@ -48,6 +48,16 @@ select:disabled { opacity: .6; }
 #build-msg { color: var(--err); margin: -4px 0 8px; }
 .endpoint { margin: 0 0 12px; padding: 12px 14px 14px; border: 1px solid var(--border); border-radius: 8px; }
 .endpoint-url { font: 13px/1.5 ui-monospace, Consolas, "Cascadia Mono", monospace; }
+/* The Files section around the boxes: a heading with Hide / Expand and what is filled in. */
+.files-section { margin: 4px 0 12px; }
+.files-section > summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 6px; padding: 6px 0; cursor: pointer; list-style: none; }
+.files-section > summary::-webkit-details-marker { display: none; }
+.files-section > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.files-section > summary:hover .rf-toggle { color: var(--accent); border-color: var(--accent); }
+.files-section:not([open]) > summary .rf-toggle::after { content: "Expand"; }
+.files-title { font-weight: 600; }
+.files-summary { min-width: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.files-section[open] .files-summary { display: none; }
 .endpoint legend { padding: 0 6px; font-weight: 600; color: var(--muted); font-size: 13px; }
 .endpoint select:not([hidden]) + input:not([hidden]) { margin-top: 8px; }
 /* URL / Project / Repository / Path / File / Extension on one line, sized to their usual contents. */
