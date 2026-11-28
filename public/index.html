@@ -99,7 +99,7 @@
 
     <section id="panel-settings" class="panel" role="tabpanel" aria-labelledby="tab-settings" hidden>
       <form id="conn" class="card">
-        <div class="card-title">Bitbucket login <span id="conn-state" class="state"></span></div>
+        <div class="card-title">Bitbucket <span id="conn-state" class="state"></span></div>
         <div class="excel-bar">
           <div class="actions">
             <label class="file-button">
@@ -111,7 +111,6 @@
             <span id="pick-state" class="state"></span>
             <span id="pick-status" role="status"></span>
           </div>
-          <p class="note">Excel columns: <b>Bitbucket URL</b>, <b>Project key</b>, <b>Repository</b>, one row per repository (first sheet, .xlsx or .csv). An empty Bitbucket URL or Project key cell means "same as the row above". The Bitbucket URL below is filled in from the list; project keys and repositories are offered in the eComm API tab. The file is read in this browser only.</p>
         </div>
         <div class="grid">
           <label class="wide">
@@ -132,7 +131,6 @@
           <button id="login" type="submit">Log in</button>
           <span id="conn-status" role="status"></span>
         </div>
-        <p class="note">Your password goes only to this local server and on to Bitbucket. It is never saved; reloading the page clears it. The URL, user ID and defaults are remembered in this browser.</p>
       </form>
     </section>
   </main>

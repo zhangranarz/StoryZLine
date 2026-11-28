@@ -6,7 +6,7 @@ A small local web tool: enter an **eCommAPI** and the **EndPoint Java file locat
 
 1. Windows: nothing to install (see *Running on another computer*). Elsewhere: Node.js 18 or newer, with no `npm install` needed.
 2. Double-click `start.cmd` (or run `npm start`) and open http://127.0.0.1:5180.
-3. Open the **⚙ Settings** tab and, under **Bitbucket login**, enter:
+3. Open the **⚙ Settings** tab and, under **Bitbucket**, enter:
    - **Bitbucket URL**: the address you open Bitbucket at (with any context path, e.g. `https://git.bank.com/bitbucket`), or `https://bitbucket.org` for Cloud.
    - **User ID** and **Password**. If your Bitbucket uses SSO or two-factor login, use an HTTP access token as the password. Bitbucket Cloud needs an API token, not your account password.
 
