@@ -324,6 +324,51 @@ function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controll
   return { rows, classes };
 }
 
+// Lines of a route/configuration file (any text format, e.g. XML) that belong to an eComm API.
+// In order, the first that finds something:
+//   'path': lines holding a path pattern that matches the API path: the whole of one of them
+//           matching the end of the other, so a context path like /spl-banking may be on either
+//           side ({var} and * match one segment, ** any number; at least two fixed segments);
+//   'text': lines containing the longest run (at least three segments, or all) of the API path;
+//   'name': with no API path, lines mentioning one of `names` (e.g. the Endpoint class).
+// Returns { lines, how }.
+function findRouteLines(src, apiPath, names = []) {
+  const lines = String(src || '').split(/\r?\n/);
+  const api = normaliseApi(apiPath);
+  const hits = new Set();
+  const segment = s => (s === '**' ? '.*' : s === '*' ? '[^/]+'
+    : s.replace(/\{[^}]*\}/g, '\u0000').replace(/[.*+?^$()|[\]\\]/g, '\\$&').replace(/\u0000/g, '[^/]+'));
+  if (api && api !== '/') {
+    lines.forEach((line, i) => {
+      for (const t of line.matchAll(/\/[A-Za-z0-9_\-.{}*~$/]+/g)) {
+        const segs = t[0].split('/').filter(Boolean);
+        const fixed = list => list.filter(s => !/[*{}]/.test(s)).length;
+        if (fixed(segs) < 2) continue;
+        // The pattern matches the end of the API, or the API matches the end of the pattern.
+        let found = new RegExp(`(^|/)${segs.map(segment).join('/')}$`, 'i').test(api);
+        for (let k = 1; !found && fixed(segs.slice(k)) >= 2; k++) {
+          found = new RegExp(`^/${segs.slice(k).map(segment).join('/')}$`, 'i').test(api);
+        }
+        if (found) { hits.add(i + 1); break; }
+      }
+    });
+    if (hits.size) return { lines: [...hits], how: 'path' };
+    const segs = api.split('/').filter(Boolean);
+    for (let n = segs.length; n >= Math.min(3, segs.length) && !hits.size; n--) {
+      for (let s = 0; s + n <= segs.length; s++) {
+        const needle = segs.slice(s, s + n).join('/').toLowerCase();
+        lines.forEach((line, i) => { if (line.toLowerCase().includes(needle)) hits.add(i + 1); });
+      }
+    }
+    return { lines: [...hits].sort((a, b) => a - b), how: hits.size ? 'text' : null };
+  }
+  for (const name of names.filter(Boolean)) {
+    const rx = new RegExp(`\\b${name.replace(/[$]/g, '\\$&')}\\b`);
+    lines.forEach((line, i) => { if (rx.test(line)) hits.add(i + 1); });
+  }
+  return { lines: [...hits].sort((a, b) => a - b), how: hits.size ? 'name' : null };
+}
+
 function normaliseApi(api) {
   let s = String(api || '').trim();
   if (!s) return '';
@@ -383,7 +428,7 @@ function analyse(src, api) {
   };
 }
 
-const api = { analyse, findEndpoints, findMethods, traceFlows, matchEndpoints, normaliseApi, stripComments };
+const api = { analyse, findEndpoints, findMethods, traceFlows, findRouteLines, matchEndpoints, normaliseApi, stripComments };
 if (typeof module === 'object' && module.exports) module.exports = api;
 else window.StoryZJava = api;
 })();

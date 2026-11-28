@@ -157,6 +157,8 @@ class Part {
       file.name.placeholder = f.placeholder;
       file.extSelect.innerHTML = EXTENSIONS.map(x => `<option value="${x}">${x}</option>`).join('') +
         `<option value="">(no extension)</option><option value="${OTHER}">Other…</option>`;
+      file.ext.value = f.extension || '.java';  // the default until the user picks another
+      file.extSelect.value = file.ext.value;
       file.url = document.createElement('input');
       file.url.className = 'p-url endpoint-url';
       file.url.autocomplete = 'off';
@@ -326,6 +328,7 @@ $('api').value = store.get('api');
 $('api').addEventListener('input', () => store.set('api', $('api').value.trim()));
 
 const parts = [
+  new Part('route', 'Route', [{ key: 'route', title: 'File', label: 'Route', placeholder: 'portfolio-routes', extension: '.xml' }]),
   new Part('endpoint', 'Endpoint', [{ key: 'endpoint', title: 'File', label: 'Endpoint', placeholder: 'CustomerPortfolioEndpoint' }]),
   new Part('apictl', 'APIController', [
     { key: 'api', title: 'API File', label: 'API', placeholder: 'CustomerPortfolioApi' },
@@ -435,7 +438,7 @@ $('pick-clear').addEventListener('click', () => {
 
 // ---- Pull the files and follow API path -> Endpoint -> API -> Controller ----
 
-const FILE_ORDER = ['endpoint', 'api', 'controller'];
+const FILE_ORDER = ['route', 'endpoint', 'api', 'controller'];
 let view = null;  // { files, flows, selected, panes, whole }
 
 $('form').addEventListener('submit', async e => {
@@ -488,7 +491,9 @@ function render(results, apiPath) {
   const files = Object.fromEntries(results.map(r => [r.key, r]));
   const src = k => (files[k] && files[k].content != null ? files[k].content : null);
   const flows = Java.traceFlows({ endpoint: src('endpoint'), api: src('api'), controller: src('controller'), apiPath });
-  view = { files, flows, selected: 0, panes: {}, whole: {} };
+  // The route file's lines for this API (the same for every row).
+  const route = src('route') != null ? Java.findRouteLines(src('route'), apiPath, [flows.classes.endpoint]) : null;
+  view = { files, flows, route, selected: 0, panes: {}, whole: {} };
   $('result').hidden = false;
 
   const none = '<span class="none">—</span>';
@@ -514,6 +519,11 @@ function render(results, apiPath) {
   if (apiPath && src('endpoint') != null && !flows.rows.length) notes.push('Showing the whole Endpoint file.');
   const called = [flows.classes.api, flows.classes.controller].filter(Boolean);
   if (called.length && flows.rows.length && !linked) notes.push(`No calls to ${called.join(' or ')} were found in the Endpoint methods.`);
+  if (route) {
+    const n = route.lines.length;
+    notes.push(!n ? 'Route: no line matches this API.'
+      : `Route: ${n} line${n === 1 ? '' : 's'} ${route.how === 'path' ? 'with a path matching the API' : route.how === 'text' ? 'mentioning the API path' : `mentioning ${flows.classes.endpoint}`}.`);
+  }
   $('flow-note').textContent = notes.join(' ');
   $('flow-note').hidden = !notes.length;
 
@@ -536,8 +546,25 @@ function select(i) {
   for (const key of Object.keys(view.panes)) drawPane(key);
 }
 
+// Merges [start, end] ranges that overlap or touch.
+function mergeRanges(list) {
+  const out = [];
+  for (const [s, e] of list.sort((a, b) => a[0] - b[0])) {
+    const prev = out[out.length - 1];
+    if (prev && s <= prev[1] + 1) prev[1] = Math.max(prev[1], e);
+    else out.push([s, e]);
+  }
+  return out;
+}
+
 // The line ranges and highlighted lines of a row in one pane.
 function rowParts(key, row) {
+  if (key === 'route') {
+    // The route's matching lines, with two lines of context; the same for every row.
+    const marks = view.route ? view.route.lines : [];
+    const last = view.files.route.content.split(/\r?\n/).length;
+    return { ranges: mergeRanges(marks.map(n => [Math.max(1, n - 2), Math.min(last, n + 2)])), marks };
+  }
   if (!row) return { ranges: [], marks: [] };
   const found = (key === 'endpoint' ? [row.endpoint] : row[key]).filter(Boolean);
   const ranges = [];
@@ -575,7 +602,9 @@ function drawPane(key) {
   const { ranges, marks } = rowParts(key, row);
   const whole = view.whole[key] || !ranges.length;
   msg.className = 'pane-msg note';
-  msg.textContent = row && !ranges.length ? `No ${f.label} method for this row: showing the whole file.` : '';
+  msg.textContent = ranges.length ? ''
+    : key === 'route' ? 'No line in the Route file matches this API: showing the whole file.'
+    : row ? `No ${f.label} method for this row: showing the whole file.` : '';
   msg.hidden = !msg.textContent;
 
   const lines = f.content.split(/\r?\n/);

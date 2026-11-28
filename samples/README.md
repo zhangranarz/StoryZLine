@@ -1,6 +1,6 @@
 # Demo kit
 
-Try StoryZLine without a real Bitbucket: a pretend Bitbucket serves the sample Endpoint, API and Controller files in this folder.
+Try StoryZLine without a real Bitbucket: a pretend Bitbucket serves the sample Route, Endpoint, API and Controller files in this folder.
 
 ## Start
 
@@ -10,10 +10,11 @@ Try StoryZLine without a real Bitbucket: a pretend Bitbucket serves the sample E
 
 ## Try it in the eComm tab
 
-Fill in the two boxes (Project `DEMO`, Repository `ecomm-services`, Extensions `.java`):
+Fill in the three boxes (Project `DEMO`, Repository `ecomm-services`):
 
 | Box | Path | File(s) |
 |---|---|---|
+| Route | `src/main/resources/routes` | File `portfolio-routes` (Extension `.xml`) |
 | Endpoint | `src/main/java/com/example/ecomm/enq` | File `CustomerPortfolioEndpoint` |
 | APIController | `src/main/java/com/example/ecomm/enq/controller` | API File `CustomerPortfolioApi`, Controller File `CustomerPortfolioController` |
 
@@ -26,6 +27,8 @@ Then type an **API** and click **Pull from Bitbucket**:
 | `/enq/customer/portfolio/12345/export` | `exportPortfolio()` → `exportCsv()` → `exportCsv()` (the names differ along the way) |
 | `/enq/customer/unknown` | none: the whole Endpoint file is shown |
 | *(empty)* | every mapping in the Endpoint |
+
+The Route pane shows the route entries whose `path` matches the API: for the first API, `portfolio-get` and `portfolio-update` (`/spl-banking/enq/customer/portfolio/*`).
 
 How the demo is wired: the Endpoint holds a `CustomerPortfolioApi portfolioApi` field and calls it; `CustomerPortfolioController implements CustomerPortfolioApi`. The POST row reaches two methods; the Endpoint's `audit.log(...)` calls are not counted, because `audit` is neither the API nor the Controller.
 

@@ -560,3 +560,31 @@ test('tracing with missing files and without typed fields', () => {
   // No Endpoint: nothing to start from.
   assert.deepStrictEqual(traceFlows({ api: sample(API_FILE), controller: sample(CTL_FILE) }).rows, []);
 });
+
+// ---- Route file ----
+
+const { findRouteLines } = require('../public/shared/java');
+const ROUTES = 'ecomm-services/src/main/resources/routes/portfolio-routes.xml';
+
+test('the route file lines for an API: path patterns, with the context path on either side', () => {
+  const xml = sample(ROUTES);
+  const lines = xml.split(/\r?\n/);
+  const ids = api => findRouteLines(xml, api, ['CustomerPortfolioEndpoint']).lines.map(n => (lines[n - 1].match(/id="([^"]+)"/) || [])[1]);
+  assert.deepStrictEqual(ids('/spl-banking/enq/customer/portfolio/12345'), ['portfolio-get', 'portfolio-update']);  // * = one segment
+  assert.deepStrictEqual(ids('/enq/customer/portfolio/12345'), ['portfolio-get', 'portfolio-update']);              // no /spl-banking typed
+  assert.deepStrictEqual(ids('/enq/customer/portfolio/1/holdings/H-9'), ['portfolio-holding-delete']);
+  assert.deepStrictEqual(ids('/spl-banking/enq/customer/portfolio/9/export?x=1'), ['portfolio-export']);          // {customerId}, query ignored
+  assert.deepStrictEqual(ids('/spl-banking/enq/customer/a/b/summary'), ['portfolio-summary']);                   // ** = any segments
+  assert.deepStrictEqual(ids('/accounts/123/balance'), ['account-balance']);
+  assert.deepStrictEqual(findRouteLines(xml, '/enq/customer/unknown', ['CustomerPortfolioEndpoint']), { lines: [], how: null });
+
+  // No API: the lines naming the Endpoint class.
+  const byName = findRouteLines(xml, '', ['CustomerPortfolioEndpoint']);
+  assert.strictEqual(byName.how, 'name');
+  assert.strictEqual(byName.lines.length, 5);
+
+  // A file without path patterns: the longest run of the API path, three segments at least.
+  const props = 'route.portfolio.url=enq/customer/portfolio\nroute.summary.url=enq/customer/summary\nother=enq/customer';
+  assert.deepStrictEqual(findRouteLines(props, '/spl-banking/enq/customer/portfolio/12345'), { lines: [1], how: 'text' });
+  assert.deepStrictEqual(findRouteLines(props, '/enq/customer/x'), { lines: [], how: null });  // "enq/customer" alone is too common
+});

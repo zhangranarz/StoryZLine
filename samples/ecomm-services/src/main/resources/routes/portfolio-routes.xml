@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Demo route file for StoryZLine: an invented format, not a real product's. -->
+<routes service="ecomm-services">
+
+    <!-- Customer portfolio -->
+    <route id="portfolio-get" method="GET" path="/spl-banking/enq/customer/portfolio/*">
+        <target endpoint="CustomerPortfolioEndpoint" operation="getPortfolio"/>
+        <timeout ms="5000"/>
+    </route>
+
+    <route id="portfolio-update" method="POST" path="/spl-banking/enq/customer/portfolio/*">
+        <target endpoint="CustomerPortfolioEndpoint" operation="updatePortfolio"/>
+        <timeout ms="8000"/>
+    </route>
+
+    <route id="portfolio-holding-delete" method="DELETE" path="/spl-banking/enq/customer/portfolio/*/holdings/*">
+        <target endpoint="CustomerPortfolioEndpoint" operation="removeHolding"/>
+    </route>
+
+    <route id="portfolio-export" method="GET" path="/spl-banking/enq/customer/portfolio/{customerId}/export">
+        <target endpoint="CustomerPortfolioEndpoint" operation="exportPortfolio"/>
+    </route>
+
+    <route id="portfolio-summary" method="GET,POST" path="/spl-banking/enq/customer/**/summary">
+        <target endpoint="CustomerPortfolioEndpoint" operation="summary"/>
+    </route>
+
+    <!-- Accounts (JAX-RS service) -->
+    <route id="account-balance" method="GET" path="/spl-banking/accounts/{accountId}/balance">
+        <target endpoint="AccountBalanceResource" operation="balance"/>
+    </route>
+
+</routes>
