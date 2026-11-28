@@ -115,6 +115,7 @@ pre { margin: 0; overflow: auto; max-height: 75vh; background: var(--code-bg); f
 .tab-count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font: 600 11px/18px system-ui, sans-serif; text-align: center; }
 .tab-count.zero { background: var(--border); color: var(--muted); }
 .tab-count.bad { background: var(--err); }
+.tab-filter { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding: 0 4px 6px; color: var(--muted); font-size: 12px; cursor: pointer; }
 .endpoint + .endpoint { margin-top: 4px; }
 .p-urls { display: grid; gap: 8px; }
 /* A row per file in a box with several files: File, Extension, joined URL. */

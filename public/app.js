@@ -826,12 +826,23 @@ function drawRouteTabs(pane) {
     bar.setAttribute('aria-label', 'Route files');
     pane.querySelector('.pane-head').after(bar);
   }
+  // "Hide files without a route": leaves out the files where the selected row found nothing
+  // (files that failed to pull stay, so their error is seen). Remembered in this browser.
+  const counts = view.routeFiles.map((f, k) => (f.content != null ? routeCount(k) : 0));
+  const any = counts.some(n => n > 0);
+  const hide = store.get('routeHideEmpty') !== 'no';
+  const shown = k => !hide || !any || counts[k] > 0 || view.routeFiles[k].error;
+  if (!shown(view.routeTab)) view.routeTab = counts.findIndex(n => n > 0);
+  const hidden = view.routeFiles.filter((f, k) => !shown(k)).length;
   bar.innerHTML = view.routeFiles.map((f, k) => {
-    const n = f.content != null ? routeCount(k) : 0;
+    if (!shown(k)) return '';
+    const n = counts[k];
     const badge = f.error ? '<span class="tab-count bad">!</span>' : `<span class="tab-count${n ? '' : ' zero'}">${n}</span>`;
     return `<button type="button" class="pane-tab${n ? '' : ' empty'}" role="tab" data-file="${k}" aria-selected="${k === view.routeTab}"` +
       ` title="${esc(f.loc ? f.loc.path : f.url)}">${esc(f.loc ? f.loc.path.split('/').pop() : f.url)} ${badge}</button>`;
-  }).join('');
+  }).join('') +
+    `<label class="tab-filter" title="Hide the Route files where this row has no route"><input type="checkbox" class="route-hide"${hide ? ' checked' : ''}>` +
+    ` Hide files without a route${hidden ? ` (${hidden} hidden)` : !any ? ' (none has one)' : ''}</label>`;
 }
 
 function drawPane(key) {
@@ -928,7 +939,10 @@ $('panes').addEventListener('click', async e => {
   if (!pane || !view) return;
   const key = pane.dataset.pane;
   const tab = e.target.closest('.pane-tab');
-  if (tab) {
+  if (e.target.closest('.route-hide')) {
+    store.set('routeHideEmpty', e.target.checked ? 'yes' : 'no');
+    drawPane('route');
+  } else if (tab) {
     view.routeTab = Number(tab.dataset.file);
     view.whole.route = false;
     drawPane('route');
