@@ -671,28 +671,30 @@ test('the process diagram has a box per step and an arrow per call', () => {
   const { flows, graph } = demoGraph('/spl-banking/enq/customer/portfolio/12345');
   const label = id => { const n = graph.nodes.find(x => x.id === id); return `${n.layer}:${n.label}`; };
   assert.deepStrictEqual(graph.edges.map(e => `${label(e.from)} > ${label(e.to)} [${e.kind}] rows ${e.rows}`), [
-    'start:/spl-banking/enq/customer/portfolio/12345 > route:ecomm.portfolio.get [route] rows 0',
-    'route:ecomm.portfolio.get > endpoint:getPortfolio() [route] rows 0',
-    'endpoint:getPortfolio() > api:getPortfolio() [call] rows 0',
+    'start:/spl-banking/enq/customer/portfolio/12345 > endpoint:getPortfolio() [route] rows 0',
+    'endpoint:getPortfolio() > route:ecomm.portfolio.get [route] rows 0',
+    'route:ecomm.portfolio.get > api:getPortfolio() [call] rows 0',
     'api:getPortfolio() > controller:getPortfolio() [implements] rows 0',
     'controller:getPortfolio() > command:enquire() [call] rows 0',
     'endpoint:getPortfolio() > builder:portfolio() [response] rows 0',
-    'start:/spl-banking/enq/customer/portfolio/12345 > route:ecomm.portfolio.update [route] rows 1',
-    'route:ecomm.portfolio.update > endpoint:updatePortfolio() [route] rows 1',
-    'endpoint:updatePortfolio() > api:validate() [call] rows 1',
-    'endpoint:updatePortfolio() > api:savePortfolio() [call] rows 1',
+    'start:/spl-banking/enq/customer/portfolio/12345 > endpoint:updatePortfolio() [route] rows 1',
+    'endpoint:updatePortfolio() > route:ecomm.portfolio.update [route] rows 1',
+    'route:ecomm.portfolio.update > api:validate() [call] rows 1',
+    'route:ecomm.portfolio.update > api:savePortfolio() [call] rows 1',
     'api:validate() > controller:validate() [implements] rows 1',
     'api:savePortfolio() > controller:savePortfolio() [implements] rows 1',
     'controller:savePortfolio() > command:update() [call] rows 1',
     'endpoint:updatePortfolio() > builder:noContent() [response] rows 1',
   ]);
+  assert.strictEqual(graph.edges.find(e => e.to.startsWith('api:') && e.rows.includes(1)).label, 'in updatePortfolio(): portfolioApi.validate()');
   // Boxes know where their code is.
   const enquire = graph.nodes.find(n => n.label === 'enquire()');
   assert.deepStrictEqual(enquire.ref, { pane: 'command', line: flows.rows[0].command[0].declLine });
 
   // The SVG: a lane per layer, the selected row on, the other dimmed, and clickable boxes.
   const svg = Diagram.toSvg(graph, { lanes: flows.classes, selected: 1 });
-  for (const lane of ['Request', 'Route', 'Endpoint', 'API', 'Controller', 'Command', 'Builder']) assert.match(svg, new RegExp(`dg-lane-title">${lane}<`));
+  assert.deepStrictEqual([...svg.matchAll(/dg-lane-title">([^<]+)</g)].map(m => m[1]), ['Request', 'Endpoint', 'Route', 'API', 'Controller', 'Command', 'Builder']);
+  for (const lane of ['Request', 'Endpoint', 'Route', 'API', 'Controller', 'Command', 'Builder']) assert.match(svg, new RegExp(`dg-lane-title">${lane}<`));
   assert.match(svg, /class="dg-node dg-endpoint dg-on"[^>]*data-pane="endpoint"/);
   assert.match(svg, /class="dg-node dg-command dg-off"/);  // enquire() belongs to row 0
   assert.strictEqual((svg.match(/dg-response/g) || []).length, 2);

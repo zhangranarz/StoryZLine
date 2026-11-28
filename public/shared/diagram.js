@@ -1,11 +1,11 @@
-// Turns traced flows into one process diagram: a lane per layer (Request, Route, Endpoint, API,
+// Turns traced flows into one process diagram: a lane per layer (Request, Endpoint, Route, API,
 // Controller, Command, Builder), a box per method, and an arrow per call. Pure functions that
 // return data and SVG text, shared by the browser page and the Node tests.
 (function () {
   'use strict';
 
   const LAYERS = [
-    ['start', 'Request'], ['route', 'Route'], ['endpoint', 'Endpoint'], ['api', 'API'],
+    ['start', 'Request'], ['endpoint', 'Endpoint'], ['route', 'Route'], ['api', 'API'],
     ['controller', 'Controller'], ['command', 'Command'], ['builder', 'Builder'],
   ];
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -57,35 +57,42 @@
       addNode(ep, 'endpoint', `${r.endpoint.name}()`, `${r.methods.join(' ')} ${r.paths.join(' ')}`.trim(), i,
         { pane: 'endpoint', line: r.endpoint.declLine });
 
-      // The row's own <route> (found by the Endpoint method name), else route lines that fit it.
-      let routed = 0;
+      // Request -> Endpoint -> the row's own <route> (found by the Endpoint method name), else the
+      // route lines that fit it.
+      addEdge('start', ep, 'route', 'mapped to the Endpoint', i);
+      const routeIds = [];
       for (const x of r.routes || []) {
         const id = `route:${x.start}`;
         addNode(id, 'route', x.id || `line ${x.start}`, x.uri, i, { pane: 'route', line: x.start });
-        addEdge('start', id, 'route', 'matches the route', i);
-        addEdge(id, ep, 'route', `from ${x.uri}`, i);
-        routed++;
+        addEdge(ep, id, 'route', `route from ${x.uri}`, i);
+        routeIds.push(id);
       }
-      if (!routed) {
+      if (!routeIds.length) {
         for (const l of routeLines.filter(l => routeFits(l.text, r, rows))) {
           const id = `route:${l.n}`;
           addNode(id, 'route', routeLabel(l.text), `line ${l.n}`, i, { pane: 'route', line: l.n });
-          addEdge('start', id, 'route', 'matches the route', i);
-          addEdge(id, ep, 'route', 'routes to the Endpoint', i);
-          routed++;
+          addEdge(ep, id, 'route', 'route for the Endpoint', i);
+          routeIds.push(id);
         }
       }
-      if (!routed) addEdge('start', ep, 'route', 'mapped to the Endpoint', i);
+      // With a route, the Endpoint's onward calls are drawn from the route's box, so the request
+      // reads as one chain (Endpoint -> Route -> API ...) and no arrow crosses the Route lane.
+      const via = routeIds[0];
 
       // Endpoint -> Controller calls made through the API interface are drawn as Endpoint -> API -> Controller.
       const implemented = new Set(r.edges.filter(e => e.kind === 'implements').map(e => e.to.declLine));
       for (const e of r.edges) {
         if (e.from.layer === 'endpoint' && e.to.layer === 'controller' && implemented.has(e.to.declLine)) continue;
-        const from = `${e.from.layer}:${e.from.declLine}`;
+        let from = `${e.from.layer}:${e.from.declLine}`;
         const to = `${e.to.layer}:${e.to.declLine}`;
         addNode(from, e.from.layer, `${e.from.name}()`, '', i, { pane: e.from.layer, line: e.from.declLine });
         addNode(to, e.to.layer, `${e.to.name}()`, '', i, { pane: e.to.layer, line: e.to.declLine });
-        addEdge(from, to, e.to.layer === 'builder' ? 'response' : e.kind, e.call, i);
+        let label = e.call;
+        if (via && e.from.layer === 'endpoint' && e.to.layer !== 'builder') {
+          from = via;
+          label = `in ${e.from.name}(): ${e.call}`;  // the call is in the Endpoint method
+        }
+        addEdge(from, to, e.to.layer === 'builder' ? 'response' : e.kind, label, i);
       }
     });
     return { nodes: [...nodes.values()], edges: [...edges.values()] };

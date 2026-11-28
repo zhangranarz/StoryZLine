@@ -30,7 +30,7 @@ Then type an **API** and click **Pull from Bitbucket**:
 | `/enq/customer/unknown` | none: the whole Endpoint file is shown |
 | *(empty)* | every mapping in the Endpoint |
 
-The **Process** diagram at the top of the results draws both rows: Request → route entry → Endpoint → API → Controller → Command, with dashed arrows to the Builder. Click a row in Flow, or a box, to highlight one path.
+The **Process** diagram at the top of the results draws both rows: Request → Endpoint → route → API → Controller → Command, with dashed arrows to the Builder. Click a row in Flow, or a box, to highlight one path.
 
 `portfolio-routes.xml` is a Camel-style route file: each `<route>` starts `from` `direct:ecomm.portfolio_<Endpoint method>`. So the GET row's route is `ecomm.portfolio.get` (`_getPortfolio`) and the POST row's `ecomm.portfolio.update` (`_updatePortfolio`); the Route pane shows only the selected row's `<route>` section. `_getPortfolioHistory` and a commented-out route are deliberately not matched. (`gateway-routes.xml` is an older path-pattern style file, used when no route matches by name.)
 
