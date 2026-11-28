@@ -53,12 +53,13 @@ Instead of typing locations, keep them in an Excel sheet. The first sheet needs 
 *Branch* and *Endpoint Java file location* are optional. **Download template** in the page gives you a CSV to start from.
 
 1. In the **Bitbucket login** section, click **Load Excel list…** and choose the `.xlsx` (or `.csv`) file. It is read in your browser only, and remembered there until you click **Forget list**.
-2. The login's **Bitbucket URL** is filled in from the list. If the sheet has several, it becomes a dropdown of them; **Other URL…** lets you type one that isn't in the sheet.
-3. In **Pick from Excel**, choose the Project key, Repository, Branch and Endpoint Java file location. Each list only offers rows for the Bitbucket URL above and the picks before it.
-4. Type the extra **Path** (added after the location) and the **File name**. `.java` is added if you leave out the extension.
-5. The full Bitbucket file URL appears underneath:
+2. The login fills in from the list:
+   - **Bitbucket URL**: from the sheet. If it has several, choose one from the dropdown; **Other URL…** lets you type one that isn't in the sheet.
+   - **Project key**, **Repository**, **Branch**: dropdowns. Each only offers rows for the Bitbucket URL and the picks before it.
+3. In the pull form, choose the **Endpoint Java file location** and type the extra **Path** (added after the location) and the **File name**. `.java` is added if you leave out the extension.
+4. **Full Bitbucket file URL** fills in as you type:
    `Bitbucket URL /projects/ Project key /repos/ Repository /browse/ Endpoint location / Path / File name ?at= Branch`
-6. Click **Use this file** to fill in *EndPoint Java file location*, then **Pull from Bitbucket**.
+5. Click **Pull from Bitbucket** (or press Enter).
 
 Old `.xls` files aren't supported. In Excel, use *File > Save As > Excel Workbook (.xlsx)* or CSV.
 

@@ -199,18 +199,25 @@ $('download').addEventListener('click', () => {
   URL.revokeObjectURL(a.href);
 });
 
-// ---- Pick from Excel ----------------------------------------------------------------
+// ---- Excel list ---------------------------------------------------------------------
 // The list (no passwords) and the last picks are remembered in this browser.
-// The Bitbucket URL is the login's; the pick lists follow it.
+// It fills the login (Bitbucket URL, project, repository, branch) and builds the file
+// location from the endpoint location, path and file name.
 
 const XL = window.StoryZExcel;
 const PICK_KEYS = ['project', 'repo', 'branch', 'location'];
+const LOGIN_FIELDS = { project: 'conn-project', repo: 'conn-repo', branch: 'conn-branch' };
 const OTHER_URL = '__other__';
 let pickEntries = [];
 let pickColumns = [];
 
 const sameUrl = (a, b) => String(a || '').trim().replace(/\/+$/, '').toLowerCase() ===
   String(b || '').trim().replace(/\/+$/, '').toLowerCase();
+
+function setPickStatus(text, isError = false) {
+  $('pick-status').textContent = text;
+  $('pick-status').className = isError ? 'error' : '';
+}
 
 function setLoginUrl(url) {
   if (sameUrl(url, $('conn-url').value)) return;
@@ -238,11 +245,6 @@ function showUrlChoices(fromNewFile) {
   $('conn-url-hint').textContent = urls.length > 1 ? `(${urls.length} in the Excel list)` : '(from the Excel list)';
 }
 
-function setPickStatus(text, isError = false) {
-  $('pick-status').textContent = text;
-  $('pick-status').className = isError ? 'error' : '';
-}
-
 function pickParts() {
   const p = { baseUrl: $('conn-url').value.trim(), path: $('pick-path').value, fileName: $('pick-name').value };
   for (const k of PICK_KEYS) p[k] = $('pick-' + k).value;
@@ -252,11 +254,10 @@ function pickParts() {
 function loadPickList(list, fromNewFile = false) {
   pickEntries = list.entries;
   pickColumns = list.columns;
-  $('pick').hidden = false;
   $('pick-clear').hidden = false;
-  showUrlChoices(fromNewFile);
   $('pick-state').textContent = `${list.entries.length} row${list.entries.length === 1 ? '' : 's'} from ${list.source}`;
   $('pick-state').className = 'state ok';
+  showUrlChoices(fromNewFile);
   const saved = store.json('pickChoice') || {};
   for (const k of PICK_KEYS) $('pick-' + k).dataset.want = saved[k] || '';
   $('pick-path').value = saved.path || '';
@@ -264,14 +265,25 @@ function loadPickList(list, fromNewFile = false) {
   refreshPicks();
 }
 
-// Each pick list only offers values that fit the Bitbucket URL and the picks to its left.
+// Shows the Excel pick lists, or the plain login/location fields when there is no list
+// (or no rows for the Bitbucket URL in use).
+function showExcelFields(on) {
+  $('excel-picks').hidden = !on;
+  $('build').hidden = !on;
+  $('defaults').hidden = on;
+  $('location-label').textContent = on
+    ? 'Full Bitbucket file URL (built from the picks above; you can still edit it)'
+    : 'EndPoint Java file location';
+}
+
+// Each pick list only offers values that fit the Bitbucket URL and the picks before it.
 function refreshPicks() {
   if (!pickEntries.length) return;
   let rows = pickEntries.filter(e => sameUrl(e.baseUrl, $('conn-url').value));
-  $('pick-body').hidden = !rows.length;
-  $('pick-empty').hidden = Boolean(rows.length);
+  showExcelFields(rows.length > 0);
+  $('pick-empty').hidden = rows.length > 0;
   if (!rows.length) {
-    $('pick-empty').textContent = 'The Excel list has no rows for this Bitbucket URL. Choose one of its URLs in the login above.';
+    $('pick-empty').textContent = 'The Excel list has no rows for this Bitbucket URL, so type the project, repository and file location yourself.';
     return;
   }
   for (const k of PICK_KEYS) {
@@ -283,21 +295,29 @@ function refreshPicks() {
     sel.value = values.includes(current) ? current : values[0];
     sel.disabled = !pickColumns.includes(k);
     rows = rows.filter(e => e[k] === sel.value);
+    // Keep the login's project / repository / branch in step, so plain paths use them too.
+    if (LOGIN_FIELDS[k]) {
+      $(LOGIN_FIELDS[k]).value = sel.value;
+      store.set(k, sel.value);
+    }
   }
   updatePickUrl();
 }
 
+// Rebuilds the file location from the picks; leaves it alone until a file name is given.
 function updatePickUrl() {
-  const out = $('pick-url');
   const parts = pickParts();
   store.set('pickChoice', JSON.stringify(parts));
+  const msg = $('build-msg');
   try {
-    out.textContent = Loc.buildFileUrl(parts);
-    out.className = 'url-preview';
-    return out.textContent;
+    const url = Loc.buildFileUrl(parts);
+    $('location').value = url;
+    store.set('location', url);
+    msg.hidden = true;
+    return url;
   } catch (err) {
-    out.textContent = err.message;
-    out.className = 'url-preview error';
+    msg.textContent = err.message;
+    msg.hidden = false;
     return null;
   }
 }
@@ -343,30 +363,7 @@ $('conn-url-select').addEventListener('change', e => {
 $('conn-url').addEventListener('input', refreshPicks);
 
 for (const k of PICK_KEYS) $('pick-' + k).addEventListener('change', refreshPicks);
-for (const id of ['pick-path', 'pick-name']) {
-  $(id).addEventListener('input', updatePickUrl);
-  $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('pick-use').click(); } });
-}
-
-$('pick-use').addEventListener('click', () => {
-  const url = updatePickUrl();
-  if (!url) return;
-  $('location').value = url;
-  store.set('location', url);
-  const needLogin = !$('conn-user').value.trim() || !$('conn-pass').value;
-  setStatus(needLogin
-    ? 'File location filled in. Enter your user ID and password above, then click "Pull from Bitbucket".'
-    : 'File location filled in. Click "Pull from Bitbucket".');
-  $('form').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  (needLogin ? $(!$('conn-user').value.trim() ? 'conn-user' : 'conn-pass') : $('go')).focus({ preventScroll: true });
-});
-
-$('pick-copy').addEventListener('click', async () => {
-  const url = updatePickUrl();
-  if (!url) return;
-  try { await navigator.clipboard.writeText(url); setPickStatus('URL copied.'); }
-  catch { setPickStatus('Clipboard not available in this browser.', true); }
-});
+for (const id of ['pick-path', 'pick-name']) $(id).addEventListener('input', updatePickUrl);
 
 $('pick-template').addEventListener('click', () => saveFile('storyzline-list.csv', XL.TEMPLATE_CSV, 'text/csv'));
 
@@ -374,7 +371,8 @@ $('pick-clear').addEventListener('click', () => {
   store.remove('pickList');
   store.remove('pickChoice');
   pickEntries = [];
-  $('pick').hidden = true;
+  showExcelFields(false);
+  $('pick-empty').hidden = true;
   $('pick-clear').hidden = true;
   $('pick-state').textContent = '';
   $('conn-url-select').hidden = true;

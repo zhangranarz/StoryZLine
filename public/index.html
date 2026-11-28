@@ -43,6 +43,12 @@
           <input id="conn-pass" type="password" required autocomplete="current-password" placeholder="Password or HTTP access token">
         </label>
       </div>
+      <div id="excel-picks" class="grid three" hidden>
+        <label><span>Project key</span><select id="pick-project"></select></label>
+        <label><span>Repository</span><select id="pick-repo"></select></label>
+        <label><span>Branch</span><select id="pick-branch"></select></label>
+      </div>
+      <p id="pick-empty" class="note" hidden></p>
       <details id="defaults">
         <summary>Default project / repo / branch (optional, lets you type plain file paths)</summary>
         <div class="grid three">
@@ -58,36 +64,19 @@
       <p class="note">Your password goes only to this local server and on to Bitbucket. It is never saved; reloading the page clears it. The URL, user ID and defaults are remembered in this browser.</p>
     </form>
 
-    <section id="pick" class="card" hidden>
-      <div class="card-title">Pick from Excel <small class="muted">for the Bitbucket URL above</small></div>
-      <p id="pick-empty" class="note" hidden></p>
-      <div id="pick-body">
-        <div class="grid">
-          <label><span>Project key</span><select id="pick-project" data-key="project"></select></label>
-          <label><span>Repository</span><select id="pick-repo" data-key="repo"></select></label>
-          <label><span>Branch</span><select id="pick-branch" data-key="branch"></select></label>
-          <label><span>Endpoint Java file location</span><select id="pick-location" data-key="location"></select></label>
-          <label><span>Path <small class="muted">(added after the location)</small></span><input id="pick-path" placeholder="enq/customer" autocomplete="off"></label>
-          <label><span>File name</span><input id="pick-name" placeholder="PortfolioEndpoint.java" autocomplete="off"></label>
-        </div>
-        <label>
-          <span>Full Bitbucket file URL</span>
-          <output id="pick-url" class="url-preview"></output>
-        </label>
-        <div class="actions">
-          <button id="pick-use" type="button">Use this file</button>
-          <button id="pick-copy" type="button">Copy URL</button>
-        </div>
-      </div>
-    </section>
-
     <form id="form" class="card">
       <label>
         <span>eCommAPI</span>
         <input id="api" name="api" placeholder="/spl-banking/enq/customer/portfolio" autocomplete="off">
       </label>
+      <div id="build" class="grid" hidden>
+        <label class="wide"><span>Endpoint Java file location <small class="muted">(from the Excel list)</small></span><select id="pick-location"></select></label>
+        <label><span>Path <small class="muted">(added after the location)</small></span><input id="pick-path" placeholder="enq/customer" autocomplete="off"></label>
+        <label><span>File name</span><input id="pick-name" placeholder="PortfolioEndpoint.java" autocomplete="off"></label>
+        <p id="build-msg" class="note wide" hidden></p>
+      </div>
       <label>
-        <span>EndPoint Java file location</span>
+        <span id="location-label">EndPoint Java file location</span>
         <input id="location" name="location" required autocomplete="off"
                placeholder="Bitbucket file URL, or a path such as src/main/java/com/bank/PortfolioEndpoint.java">
       </label>
