@@ -2,6 +2,7 @@ package com.example.ecomm.enq.controller;
 
 import com.example.ecomm.enq.builder.PortfolioResponseBuilder;
 import com.example.ecomm.enq.command.CustomerPortfolioCommand;
+import com.example.ecomm.enq.validator.PortfolioRequestValidator;
 import org.springframework.stereotype.Component;
 
 /**
@@ -26,9 +27,9 @@ public class CustomerPortfolioController implements CustomerPortfolioApi {
 
     @Override
     public void validate(Portfolio portfolio) {
-        if (portfolio.getHoldings().isEmpty()) {
-            throw new IllegalArgumentException("A portfolio needs at least one holding");
-        }
+        // The rules themselves live in PortfolioRequestValidator.
+        PortfolioRequestValidator.checkPortfolio(portfolio);
+        PortfolioRequestValidator.checkHoldings(portfolio.getHoldings());
     }
 
     @Override

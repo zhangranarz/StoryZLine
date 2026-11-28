@@ -137,3 +137,4 @@ pre { margin: 0; overflow: auto; max-height: 75vh; background: var(--code-bg); f
 .dg-head-edge { fill: var(--gutter); }
 .dg-head-on, .dg-head-response { fill: var(--accent); }
 .diagram-empty { color: var(--muted); margin: 0; }
+.dg-edge { stroke-linejoin: round; }

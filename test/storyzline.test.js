@@ -528,7 +528,7 @@ test('the API path leads through the demo Endpoint to the API and Controller met
   assert.deepStrictEqual(flow('/enq/customer/portfolio/1/export').rows.map(text), ['exact GET /enq/customer/portfolio/{customerId}/export | exportPortfolio -> exportCsv -> exportCsv']);
   assert.deepStrictEqual(flow('/enq/customer/unknown').rows, []);
   assert.strictEqual(flow('').rows.length, 5);  // no API: every mapping in the Endpoint
-  assert.deepStrictEqual(flow('').classes, { endpoint: 'CustomerPortfolioEndpoint', api: 'CustomerPortfolioApi', controller: 'CustomerPortfolioController', command: null, builder: null });
+  assert.deepStrictEqual(flow('').classes, { endpoint: 'CustomerPortfolioEndpoint', api: 'CustomerPortfolioApi', controller: 'CustomerPortfolioController', command: null, validator: null, builder: null });
 
   // Sections cover the whole method; the Endpoint's calls on portfolioApi are marked, not audit.log().
   const get = flow('/enq/customer/portfolio/1').rows[0];
@@ -637,12 +637,12 @@ test('Builder calls are found in the Endpoint and the Controller, including stat
     'updatePortfolio: noContent {"endpoint":[48],"controller":[]}',
     'summary: - {"endpoint":[],"controller":[]}',
     'removeHolding: - {"endpoint":[],"controller":[]}',
-    'exportPortfolio: csv {"endpoint":[],"controller":[51]}',
+    'exportPortfolio: csv {"endpoint":[],"controller":[52]}',
   ]);
   const epLines = sample(SPRING).split(/\r?\n/);
   assert.match(epLines[39], /PortfolioResponseBuilder\.portfolio\(/);
   const ctlLines = sample(CTL_FILE).split(/\r?\n/);
-  assert.match(ctlLines[50], /PortfolioResponseBuilder\.csv\(/);
+  assert.match(ctlLines[51], /PortfolioResponseBuilder\.csv\(/);
   // The Command step is unchanged by the Builder.
   assert.deepStrictEqual(rows.map(r => r.command.map(c => c.name).join('+')), ['enquire', 'update', 'summarise', 'deleteHolding', 'holdings']);
 
@@ -788,4 +788,48 @@ test('API and Controller methods with the Endpoint method\'s own name win over t
   const [row2] = traceFlows({ endpoint: ep.replace('api.processSubmitApi(req)', 'ctl.submit(req)').replace('private final SubmitApi api;', 'private final SubmitApi api;\n  private final SubmitController ctl;'), api: apiFile, controller: ctl2, apiPath: '/submit' }).rows;
   assert.deepStrictEqual(row2.linkedBy, { api: 'name', controller: 'call' });
   assert.deepStrictEqual(row2.controller.map(m => m.name), ['validate', 'submit']);
+});
+
+// ---- Validator ----
+
+const VALIDATOR_FILE = 'ecomm-services/src/main/java/com/example/ecomm/enq/validator/PortfolioRequestValidator.java';
+
+test('Validator calls are found from the Endpoint and the Controller', () => {
+  const { rows, classes } = traceFlows({
+    endpoint: sample(SPRING), api: sample(API_FILE), controller: sample(CTL_FILE),
+    command: sample(CMD_FILE), validator: sample(VALIDATOR_FILE), builder: sample(BUILDER_FILE),
+  });
+  assert.strictEqual(classes.validator, 'PortfolioRequestValidator');
+  assert.deepStrictEqual(rows.map(r => `${r.endpoint.name}: ${r.validator.map(v => v.name).join('+') || '-'}`), [
+    'getPortfolio: -', 'updatePortfolio: checkPortfolio+checkHoldings', 'summary: -', 'removeHolding: -', 'exportPortfolio: -',
+  ]);
+  const ctlLines = sample(CTL_FILE).split(/\r?\n/);
+  assert.deepStrictEqual(rows[1].validatorCallLines.controller.map(n => ctlLines[n - 1].trim()), [
+    'PortfolioRequestValidator.checkPortfolio(portfolio);',
+    'PortfolioRequestValidator.checkHoldings(portfolio.getHoldings());',
+  ]);
+  const vLines = sample(VALIDATOR_FILE).split(/\r?\n/);
+  assert.match(vLines[rows[1].validator[0].startLine - 1], /A portfolio must name its customer/);
+  // The other steps are unchanged by the Validator.
+  assert.deepStrictEqual(rows.map(r => r.builder.map(b => b.name).join('+')), ['portfolio', 'noContent', '', '', 'csv']);
+
+  // A Validator held in a field of the Endpoint.
+  const v = 'public class V {\n  public void check(Object o) { }\n}';
+  const ep = '@RestController\npublic class E {\n  private final V v;\n  @GetMapping("/x")\n  public R x() { v.check(1); return null; }\n}';
+  const [row] = traceFlows({ endpoint: ep, validator: v }).rows;
+  assert.deepStrictEqual([row.validator.map(x => x.name), row.validatorCallLines.endpoint], [['check'], [5]]);
+});
+
+test('the diagram gets a Validator lane, and arrows that skip a lane go round the side', () => {
+  const flows = traceFlows({
+    endpoint: sample(SPRING), api: sample(API_FILE), controller: sample(CTL_FILE),
+    command: sample(CMD_FILE), validator: sample(VALIDATOR_FILE), apiPath: '/enq/customer/portfolio/1',
+  });
+  const graph = Diagram.flowGraph({ rows: flows.rows, apiPath: '/enq/customer/portfolio/1' });
+  const svg = Diagram.toSvg(graph, { lanes: flows.classes });
+  assert.deepStrictEqual([...svg.matchAll(/dg-lane-title">([^<]+)</g)].map(m => m[1]), ['Request', 'Endpoint', 'API', 'Controller', 'Command', 'Validator']);
+  // Controller -> Validator skips the Command lane, so it is drawn with a side-channel path (an "L" segment).
+  const toValidator = [...svg.matchAll(/<path class="dg-edge dg-call[^"]*" d="([^"]+)"[^>]*><title>PortfolioRequestValidator\.check/g)];
+  assert.strictEqual(toValidator.length, 2);
+  for (const m of toValidator) assert.match(m[1], / L/);
 });

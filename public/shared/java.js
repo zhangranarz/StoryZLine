@@ -302,19 +302,21 @@ function collect(list, callees, calls, edges, from, toLayer) {
 //                         implementation when the Controller implements the API).
 //   Controller -> Command: the same, from those Controller methods (or from the Endpoint method
 //                         when no Controller file is pulled) into the Command file.
-//   Endpoint, Controller -> Builder: the same, from the Endpoint method and those Controller
-//                         methods into the (response) Builder file.
+//   Endpoint, Controller -> Validator, Builder: the same, from the Endpoint method and those
+//                         Controller methods into the Validator file and the (response) Builder file.
 // Static calls (ClassName.method()) count too.
 // Returns { rows, classes }. Each row: { methods, paths, match, endpoint, api[], controller[],
-// command[], builder[], callLines[] (Endpoint lines), commandCallLines[] and commandFrom
-// ('controller' or 'endpoint': the file those lines are in), builderCallLines { endpoint[], controller[] } }.
+// command[], validator[], builder[], callLines[] (Endpoint lines), commandCallLines[] and
+// commandFrom ('controller' or 'endpoint': the file those lines are in), validatorCallLines and
+// builderCallLines ({ endpoint[], controller[] }) }.
 function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controller: controllerSrc = null,
-  command: commandSrc = null, builder: builderSrc = null, apiPath = '' } = {}) {
+  command: commandSrc = null, validator: validatorSrc = null, builder: builderSrc = null, apiPath = '' } = {}) {
   const classes = {
     endpoint: endpointSrc && typeName(endpointSrc),
     api: apiSrc && typeName(apiSrc),
     controller: controllerSrc && typeName(controllerSrc),
     command: commandSrc && typeName(commandSrc),
+    validator: validatorSrc && typeName(validatorSrc),
     builder: builderSrc && typeName(builderSrc),
   };
   if (!endpointSrc) return { rows: [], classes };
@@ -324,17 +326,20 @@ function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controll
     api: ownMethods(apiSrc, classes.api),
     controller: ownMethods(controllerSrc, classes.controller),
     command: ownMethods(commandSrc, classes.command),
+    validator: ownMethods(validatorSrc, classes.validator),
     builder: ownMethods(builderSrc, classes.builder),
   };
   const ep = { code: stripComments(endpointSrc) };
   ep.lineOf = lineIndex(ep.code);
   ep.vars = typedVars(ep.code, [classes.api, classes.controller]);
   ep.commandVars = typedVars(ep.code, [classes.command]);
+  ep.validatorVars = typedVars(ep.code, [classes.validator]);
   ep.builderVars = typedVars(ep.code, [classes.builder]);
   const ctl = controllerSrc ? { code: stripComments(controllerSrc) } : null;
   if (ctl) {
     ctl.lineOf = lineIndex(ctl.code);
     ctl.commandVars = typedVars(ctl.code, [classes.command]);
+    ctl.validatorVars = typedVars(ctl.code, [classes.validator]);
     ctl.builderVars = typedVars(ctl.code, [classes.builder]);
   }
   const statics = k => [classes[k]].filter(Boolean);
@@ -360,8 +365,9 @@ function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controll
     const endpoint = methodOf(s.ep) || s.ep;
     const row = {
       methods: s.methods, paths: s.paths, match: s.match, endpoint: section(endpoint),
-      api: [], controller: [], command: [], builder: [],
-      callLines: [], commandCallLines: [], builderCallLines: { endpoint: [], controller: [] },
+      api: [], controller: [], command: [], validator: [], builder: [],
+      callLines: [], commandCallLines: [],
+      validatorCallLines: { endpoint: [], controller: [] }, builderCallLines: { endpoint: [], controller: [] },
       edges: [],  // who calls whom: [{ from, to, kind: 'call' | 'implements', call }]
     };
     const node = (layer, m) => ({ layer, name: m.name || m.methodName, declLine: m.declLine });
@@ -416,20 +422,23 @@ function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controll
       }
     }
 
-    // Endpoint and Controller -> Builder.
-    if (callees.builder.length) {
+    // Endpoint and Controller -> Validator and Builder.
+    for (const target of ['validator', 'builder']) {
+      if (!callees[target].length) continue;
       const sources = [['endpoint', ep, [endpoint]], ['controller', ctl, ctl ? ctlTargets : []]];
       for (const [key, file, methods] of sources) {
         for (const m of methods) {
-          const calls = callsIn(file.code, file.lineOf, m, file.builderVars, has(callees.builder), statics('builder'));
-          collect(row.builder, callees.builder, calls, row.edges, node(key, m), 'builder');
-          row.builderCallLines[key].push(...calls.map(c => c.line));
+          const calls = callsIn(file.code, file.lineOf, m, file[`${target}Vars`], has(callees[target]), statics(target));
+          collect(row[target], callees[target], calls, row.edges, node(key, m), target);
+          row[`${target}CallLines`][key].push(...calls.map(c => c.line));
         }
       }
     }
     row.callLines = [...new Set(row.callLines)];
     row.commandCallLines = [...new Set(row.commandCallLines)];
-    for (const k of ['endpoint', 'controller']) row.builderCallLines[k] = [...new Set(row.builderCallLines[k])];
+    for (const target of ['validator', 'builder']) {
+      for (const k of ['endpoint', 'controller']) row[`${target}CallLines`][k] = [...new Set(row[`${target}CallLines`][k])];
+    }
     return row;
   });
   return { rows, classes };

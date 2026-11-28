@@ -1,12 +1,12 @@
 // Turns traced flows into one process diagram: a lane per layer (Request, Endpoint, Route, API,
-// Controller, Command, Builder), a box per method, and an arrow per call. Pure functions that
+// Controller, Command, Validator, Builder), a box per method, and an arrow per call. Pure functions that
 // return data and SVG text, shared by the browser page and the Node tests.
 (function () {
   'use strict';
 
   const LAYERS = [
     ['start', 'Request'], ['endpoint', 'Endpoint'], ['route', 'Route'], ['api', 'API'],
-    ['controller', 'Controller'], ['command', 'Command'], ['builder', 'Builder'],
+    ['controller', 'Controller'], ['command', 'Command'], ['validator', 'Validator'], ['builder', 'Builder'],
   ];
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const word = name => new RegExp(`\\b${String(name).replace(/[$]/g, '\\$&')}\\b`);
@@ -111,11 +111,12 @@
     const laneWidth = list => list.reduce((s, n) => s + width(n), 0) + GAP * Math.max(0, list.length - 1);
     const contentW = Math.max(MIN_W, ...byLayer.map(laneWidth));
     const svgH = order.length * LANE_H;
-    // Response arrows that skip lanes run down a channel beside the boxes, so they don't cross
-    // the boxes in between; a margin on each side is kept free for them.
+    // Arrows that skip lanes (e.g. to the Builder or the Validator) are routed through the gaps
+    // between lanes and down a free column, so they cross no box; a margin on each side leaves
+    // room for a column outside every box.
     const laneOf = id => order.indexOf(graph.nodes.find(n => n.id === id).layer);
-    const responses = graph.edges.filter(e => e.kind === 'response' && laneOf(e.to) - laneOf(e.from) > 1);
-    const reserve = responses.length ? 30 + responses.length * 12 : 0;
+    const skips = graph.edges.filter(e => laneOf(e.to) - laneOf(e.from) > 1);
+    const reserve = skips.length ? 34 : 0;
     const left = LABEL_W + PAD + reserve;
     const svgW = left + contentW + reserve + PAD;
     const pos = new Map();
@@ -127,9 +128,23 @@
         x += w + GAP;
       }
     });
-    // Each response arrow takes the side where no other box stands between it and the channel.
-    const clear = (p, side) => ![...pos.values()].some(q => q !== p && q.lane === p.lane && (side === 'left' ? q.x < p.x : q.x > p.x));
-    const side = e => (clear(pos.get(e.from), 'left') && clear(pos.get(e.to), 'left') ? 'left' : 'right');
+    // A column for a lane-skipping arrow: x clear of every box (with a margin) in the lanes it
+    // passes, nearest the middle of its two ends.
+    const column = (e, x1, x2) => {
+      const a = pos.get(e.from);
+      const b = pos.get(e.to);
+      const blocks = [...pos.values()].filter(p => p.lane > a.lane && p.lane < b.lane)
+        .map(p => [p.x - 10, p.x + p.w + 10]).sort((u, v) => u[0] - v[0]);
+      const merged = [];
+      for (const [l, r] of blocks) {
+        const last = merged[merged.length - 1];
+        if (last && l <= last[1]) last[1] = Math.max(last[1], r); else merged.push([l, r]);
+      }
+      const want = (x1 + x2) / 2;
+      const free = x => !merged.some(([l, r]) => x > l && x < r);
+      const candidates = [want, x1, x2, ...merged.flat()].filter(free);
+      return candidates.reduce((best, x) => (Math.abs(x - want) < Math.abs(best - want) ? x : best), candidates[0]);
+    };
 
     // Fan out several arrows leaving or entering one box.
     const ends = (list, key, otherKey) => {
@@ -142,9 +157,8 @@
       }
       return at;
     };
-    const straight = graph.edges.filter(e => !responses.includes(e));
-    const outX = ends(straight, 'from', 'to');
-    const inX = ends(straight, 'to', 'from');
+    const outX = ends(graph.edges, 'from', 'to');
+    const inX = ends(graph.edges, 'to', 'from');
 
     const parts = [];
     parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" width="${svgW}" height="${svgH}" role="img" aria-label="Process diagram of the API flow">`);
@@ -166,22 +180,21 @@
     for (const e of edges) {
       const a = pos.get(e.from);
       const b = pos.get(e.to);
+      const x1 = outX.get(e.id);
+      const y1 = a.y + a.h;
+      const x2 = inX.get(e.id);
+      const y2 = b.y;
       let d;
-      if (responses.includes(e)) {
-        // Out of the box's side, down the channel, into the target's same side.
-        const k = responses.indexOf(e);
-        const onLeft = side(e) === 'left';
-        const cx = onLeft ? left - 18 - k * 12 : left + contentW + 18 + k * 12;
-        const x1 = onLeft ? a.x : a.x + a.w;
-        const x2 = onLeft ? b.x : b.x + b.w;
-        const y1 = a.y + a.h / 2;
-        const y2 = b.y + b.h / 2;
-        d = `M${x1},${y1} C${cx},${y1} ${cx},${y1} ${cx},${y1 + 20} L${cx},${y2 - 20} C${cx},${y2} ${cx},${y2} ${x2},${y2}`;
+      if (skips.includes(e)) {
+        // Down into the gap below its lane, along it to a free column, down the column, along the
+        // gap above the target lane, and into the target. Gaps hold no boxes; a small offset per
+        // arrow keeps parallel runs apart.
+        const k = (skips.indexOf(e) % 5) - 2;
+        const gapBelow = (a.lane + 1) * LANE_H + k * 3;
+        const gapAbove = b.lane * LANE_H + k * 3;
+        const cx = column(e, x1, x2);
+        d = `M${x1},${y1} L${x1},${gapBelow} L${cx},${gapBelow} L${cx},${gapAbove} L${x2},${gapAbove} L${x2},${y2}`;
       } else {
-        const x1 = outX.get(e.id);
-        const y1 = a.y + a.h;
-        const x2 = inX.get(e.id);
-        const y2 = b.y;
         const dy = Math.max(26, (y2 - y1) / 2);
         d = `M${x1},${y1} C${x1},${y1 + dy} ${x2},${y2 - dy} ${x2},${y2}`;
       }
