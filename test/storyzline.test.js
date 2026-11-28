@@ -952,3 +952,92 @@ test('routes for one Endpoint method are found in each payment* Route file', () 
   assert.deepStrictEqual(boxes.map(n => [n.label, n.ref.file]), [['payments.submit', 0], ['payments.spl.submit', 1], ['payments.v1.submit', 2]]);
   assert.match(Diagram.toSvg(graph, {}), /data-pane="route" data-line="5" data-file="2"/);
 });
+
+// ---- Route flow: a route's steps, with direct:/seda:/vm: calls followed ----
+
+const Camel = require('../public/shared/camel');
+const ROUTE_DIR = 'banking-api/src/main/resources/routes/';
+
+// One line per step, indented by depth; followed routes as "=> route id (file n)".
+function flowLines(steps, depth = 0, out = []) {
+  for (const s of steps) {
+    const pad = '  '.repeat(depth);
+    out.push(`${pad}${s.kind} ${s.target}${s.detail ? ' | ' + s.detail : ''} @${s.file}:${s.line}` +
+      (s.bean ? ` [bean ${s.bean.bean}.${s.bean.method}]` : '') + (s.missing ? ' [missing]' : '') + (s.loop ? ' [loop]' : ''));
+    flowLines(s.children, depth + 1, out);
+    if (s.follow) {
+      out.push(`${pad}  => route ${s.follow.id} (file ${s.follow.file})`);
+      flowLines(s.follow.steps, depth + 2, out);
+    }
+  }
+  return out;
+}
+
+test('Route flow: steps in order, nested blocks, routes followed across Route files', () => {
+  const files = ['payment-routes.xml', 'payment-spl-1.1.xml'];
+  const all = files.flatMap((f, i) => Camel.parseRoutes(sample(ROUTE_DIR + f)).map(route => ({ route, file: i })));
+  assert.deepStrictEqual(all.map(x => `${x.route.id} ${x.route.from} @${x.file}:${x.route.line}`), [
+    'payments.submit direct:payments.api_processSubmitApi @0:5',
+    'payments.cancel direct:payments.api_processCancelApi @0:20',
+    'payments.validate direct:payments.validate @0:25',
+    'payments.spl.submit direct:payments.spl_processSubmitApi @1:5',
+    'payments.spl.cancel direct:payments.spl_processCancelApi @1:11',
+    'spl.audit direct:spl.audit @1:16',
+  ]);
+  const start = all[0];
+  const flow = Camel.followRoutes(start.route, all, start.file);
+  assert.deepStrictEqual(flowLines(flow.steps), [
+    'log  | Payment submitted @0:7',
+    'to direct:payments.validate @0:8',
+    '  => route payments.validate (file 0)',
+    '    doTry  @0:27',
+    '      process paymentRequestCheck @0:28',
+    '      doCatch  | java.lang.IllegalArgumentException @0:29',
+    '        setHeader CamelHttpResponseCode | constant 400 @0:31',
+    '        stop  @0:34',
+    'choice  @0:9',
+    "  when  | simple ${header.channel} == 'SPL' @0:10",
+    '    to direct:payments.spl_processSubmitApi @0:12',
+    '      => route payments.spl.submit (file 1)',
+    '        to direct:spl.audit @1:7',
+    '          => route spl.audit (file 1)',
+    '            setProperty auditType | constant PAYMENT @1:18',
+    '            wireTap seda:audit.write @1:21 [missing]',
+    '        to bean:paymentController?method=processSubmitApi @1:8 [bean paymentController.processSubmitApi]',
+    '  otherwise  @0:14',
+    '    to bean:paymentController?method=processSubmitApi @0:15 [bean paymentController.processSubmitApi]',
+  ]);
+  assert.strictEqual(flow.followed, 3);
+});
+
+test('Route flow: loops stop, comments and CDATA are handled, schemes and beans are read', () => {
+  const xml = [
+    '<routes xmlns="http://camel.apache.org/schema/spring">',
+    '  <route id="a"><from uri="direct:a"/>',
+    '    <!-- <to uri="direct:never"/> -->',
+    '    <to uri="seda:b?concurrentConsumers=2"/>',
+    '  </route>',
+    '  <route id="b"><from uri="seda:b"/>',
+    '    <log message="x &amp; y"/>',
+    '    <setBody><simple><![CDATA[${body} < 5]]></simple></setBody>',
+    '    <bean ref="svc" method="run"/>',
+    '    <marshal><json library="Jackson"/></marshal>',
+    '    <to uri="vm://a"/>',
+    '  </route>',
+    '</routes>',
+  ].join('\n');
+  const all = Camel.parseRoutes(xml).map(route => ({ route, file: 0 }));
+  assert.deepStrictEqual(flowLines(Camel.followRoutes(all[0].route, all, 0).steps), [
+    'to seda:b?concurrentConsumers=2 @0:4',
+    '  => route b (file 0)',
+    '    log  | x & y @0:7',
+    '    setBody  | simple ${body} < 5 @0:8',
+    '    bean svc.run() @0:9 [bean svc.run]',
+    '    marshal json (Jackson) @0:10',
+    '    to vm://a @0:11 [loop]',
+  ]);
+  assert.strictEqual(Camel.internalName('direct-vm:x.y?block=true'), 'x.y');
+  assert.strictEqual(Camel.internalName('bean:x'), null);
+  assert.deepStrictEqual(Camel.beanCall({ kind: 'to', target: 'bean:ctl?cache=true&method=go(${body})' }), { bean: 'ctl', method: 'go' });
+  assert.strictEqual(Camel.beanCall({ kind: 'log', target: 'bean:ctl?method=go' }), null);
+});

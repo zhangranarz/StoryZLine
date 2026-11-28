@@ -5,11 +5,34 @@
     <route id="payments.submit">
         <from uri="direct:payments.api_processSubmitApi"/>
         <log message="Payment submitted"/>
-        <to uri="bean:paymentController?method=processSubmitApi"/>
+        <to uri="direct:payments.validate"/>
+        <choice>
+            <when>
+                <simple>${header.channel} == 'SPL'</simple>
+                <to uri="direct:payments.spl_processSubmitApi"/>
+            </when>
+            <otherwise>
+                <to uri="bean:paymentController?method=processSubmitApi"/>
+            </otherwise>
+        </choice>
     </route>
 
     <route id="payments.cancel">
         <from uri="direct:payments.api_processCancelApi"/>
         <to uri="bean:paymentController?method=processCancelApi"/>
+    </route>
+
+    <route id="payments.validate">
+        <from uri="direct:payments.validate"/>
+        <doTry>
+            <process ref="paymentRequestCheck"/>
+            <doCatch>
+                <exception>java.lang.IllegalArgumentException</exception>
+                <setHeader name="CamelHttpResponseCode">
+                    <constant>400</constant>
+                </setHeader>
+                <stop/>
+            </doCatch>
+        </doTry>
     </route>
 </routes>

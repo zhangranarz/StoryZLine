@@ -5,6 +5,7 @@ const Loc = window.StoryZLocation;
 const Java = window.StoryZJava;
 const XL = window.StoryZExcel;
 const Diagram = window.StoryZDiagram;
+const Camel = window.StoryZCamel;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // Remember the last inputs per browser, purely as a convenience.
@@ -615,6 +616,10 @@ function render(results, apiPath, handlers = {}) {
   const route = routeOk.length && !byName ? routeHits[routeOk[0].i] : null;  // for the notes
   const graph = Diagram.flowGraph({ rows: flows.rows, apiPath, routeLines });
   view = { files, routeFiles, routeHits, routeTab: 0, flows, byName, graph, apiPath, selected: 0, panes: {}, whole: {} };
+  // For the Route flow: every <route> of every Route file, and the methods a bean step can lead to.
+  view.camel = routeOk.flatMap(({ f, i }) => Camel.parseRoutes(f.content).map(route => ({ route, file: i })));
+  view.linkable = [['controller', 'Controller'], ['api', 'API']].flatMap(([key, label]) =>
+    (src(key) != null ? Java.findMethods(src(key)).map(m => ({ key, label, name: m.name, declLine: m.declLine })) : []));
   $('result').hidden = false;
 
   const none = '<span class="none">—</span>';
@@ -688,6 +693,7 @@ function select(i) {
   if (!view) return;
   view.selected = i;
   view.whole = {};
+  view.routeForce = null;
   // The Route tab: the first file with a route for this row (else the first file with matching lines).
   if (view.routeFiles.length > 1) {
     const counts = view.routeFiles.map((f, k) => routeCount(k));
@@ -697,7 +703,75 @@ function select(i) {
   for (const tr of $('flow').querySelectorAll('tbody tr[data-row]')) tr.classList.toggle('sel', Number(tr.dataset.row) === i);
   for (const key of Object.keys(view.panes)) drawPane(key);
   drawDiagram();
+  drawRouteFlow();
 }
+
+// The Route flow of the selected row: each of its routes step by step, with direct:/seda:/vm: calls
+// followed into the routes they start (in any pulled Route file), and bean calls linked to methods.
+function drawRouteFlow() {
+  const row = view.flows.rows[view.selected];
+  const starts = view.byName && row ? row.routes : [];
+  const found = starts.map(x => view.camel.find(c => c.file === (x.file != null ? x.file : 0) && c.route.line === x.start)).filter(Boolean);
+  $('route-flow-card').hidden = !found.length;
+  if (!found.length) return;
+  const multi = view.routeFiles.length > 1;
+  const fileName = k => { const f = view.routeFiles[k]; return f.loc ? f.loc.path.split('/').pop() : f.url; };
+  const at = (file, line) => `<a href="#" class="rf-line" data-file="${file}" data-line="${line}" title="Show in the Route pane">${multi ? `${esc(fileName(file))}:` : 'line '}${line}</a>`;
+  const link = b => {
+    const m = b && b.method && view.linkable.find(x => x.name === b.method);
+    return m ? ` <a href="#" class="rf-link" data-pane="${m.key}" data-line="${m.declLine}">→ ${m.label} ${esc(m.name)}()</a>` : '';
+  };
+  let steps = 0, followed = 0, missing = 0;
+  const stepHtml = s => {
+    steps++;
+    let html = `<li><span class="rf-kind">${esc(s.kind)}</span>${s.target ? ` <code>${esc(s.target)}</code>` : ''}` +
+      `${s.detail ? ` <span class="rf-detail">${esc(s.detail)}</span>` : ''} ${at(s.file, s.line)}${link(s.bean)}`;
+    if (s.missing) { missing++; html += ` <span class="rf-note">no pulled Route file has a route starting with ${esc(s.target.split('?')[0])}</span>`; }
+    if (s.loop) html += ` <span class="rf-note">back to route ${esc(s.loop.id)}, shown above</span>`;
+    if (s.deep) html += ' <span class="rf-note">not followed further</span>';
+    if (s.children.length) html += `<ol>${s.children.map(stepHtml).join('')}</ol>`;
+    if (s.follow) {
+      followed++;
+      html += `<div class="rf-sub"><div class="rf-head">↳ route <code>${esc(s.follow.id || s.follow.from)}</code> ${at(s.follow.file, s.follow.line)}</div>` +
+        `<ol>${s.follow.steps.map(stepHtml).join('')}</ol></div>`;
+    }
+    return html + '</li>';
+  };
+  $('route-flow').innerHTML = found.map(({ route, file }) => {
+    const flow = Camel.followRoutes(route, view.camel, file);
+    return `<div class="rf-route"><div class="rf-head">route <code>${esc(route.id || route.from)}</code> ${at(file, route.line)}</div>` +
+      `<ol><li><span class="rf-kind">from</span> <code>${esc(route.from)}</code> ${at(file, route.fromLine)}</li>${flow.steps.map(stepHtml).join('')}</ol></div>`;
+  }).join('') + (missing ? '<p class="note">Only routes in the pulled Route files are followed. To follow more, widen the Route File pattern (e.g. <code>*</code>).</p>' : '');
+  $('route-flow-state').textContent = `${steps} step${steps === 1 ? '' : 's'}${followed ? `, ${followed} route${followed === 1 ? '' : 's'} followed` : ''}`;
+}
+
+// Shows a line in a code pane (the whole file if the line is outside the found sections) and flashes it.
+function jumpTo(key, line, file) {
+  const pane = view.panes[key];
+  if (!pane) return;
+  if (key === 'route' && file != null && view.routeFiles.length > 1) {
+    view.routeTab = file;
+    view.routeForce = file;  // shown even when "Hide files without a route" would hide it
+  }
+  view.whole[key] = false;
+  const { ranges } = rowParts(key, view.flows.rows[view.selected]);
+  if (ranges.length && !ranges.some(([s, e]) => s <= line && line <= e)) view.whole[key] = true;
+  drawPane(key);
+  pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const el = pane.querySelector(`.ln[data-n="${line}"]`);
+  if (el) {
+    pane.querySelector('.pane-code').scrollTop = el.offsetTop - 40;
+    el.classList.add('flash');
+    setTimeout(() => el.classList.remove('flash'), 1200);
+  }
+}
+$('route-flow').addEventListener('click', e => {
+  const a = e.target.closest('a[data-line]');
+  if (!a || !view) return;
+  e.preventDefault();
+  if (a.classList.contains('rf-link')) jumpTo(a.dataset.pane, Number(a.dataset.line));
+  else jumpTo('route', Number(a.dataset.line), Number(a.dataset.file));
+});
 
 // The process diagram, with the selected row's path highlighted.
 function drawDiagram() {
@@ -726,22 +800,8 @@ function drawDiagram() {
 function openNode(node) {
   const rows = node.dataset.rows.split(',').map(Number);
   if (!rows.includes(view.selected)) select(rows[0]);
-  const pane = view.panes[node.dataset.pane];
-  if (!pane) return;
-  // A route box from one of several Route files: show that file's tab.
-  if (node.dataset.file != null && Number(node.dataset.file) !== view.routeTab) {
-    view.routeTab = Number(node.dataset.file);
-    view.whole.route = false;
-    drawPane('route');
-  }
-  pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  const line = pane.querySelector(`.ln[data-n="${node.dataset.line}"]`);
-  if (line) {
-    const pre = pane.querySelector('.pane-code');
-    pre.scrollTop = line.offsetTop - 40;
-    line.classList.add('flash');
-    setTimeout(() => line.classList.remove('flash'), 1200);
-  }
+  // A route box from one of several Route files opens that file's tab.
+  jumpTo(node.dataset.pane, Number(node.dataset.line), node.dataset.file != null ? Number(node.dataset.file) : undefined);
 }
 $('diagram').addEventListener('click', e => {
   const node = e.target.closest('.dg-node[data-pane]');
@@ -831,7 +891,7 @@ function drawRouteTabs(pane) {
   const counts = view.routeFiles.map((f, k) => (f.content != null ? routeCount(k) : 0));
   const any = counts.some(n => n > 0);
   const hide = store.get('routeHideEmpty') !== 'no';
-  const shown = k => !hide || !any || counts[k] > 0 || view.routeFiles[k].error;
+  const shown = k => !hide || !any || counts[k] > 0 || view.routeFiles[k].error || k === view.routeForce;
   if (!shown(view.routeTab)) view.routeTab = counts.findIndex(n => n > 0);
   const hidden = view.routeFiles.filter((f, k) => !shown(k)).length;
   bar.innerHTML = view.routeFiles.map((f, k) => {

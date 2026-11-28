@@ -12,4 +12,12 @@
         <from uri="direct:payments.spl_processCancelApi"/>
         <to uri="bean:paymentController?method=processCancelApi"/>
     </route>
+
+    <route id="spl.audit">
+        <from uri="direct:spl.audit"/>
+        <setProperty name="auditType">
+            <constant>PAYMENT</constant>
+        </setProperty>
+        <wireTap uri="seda:audit.write"/>
+    </route>
 </routes>
