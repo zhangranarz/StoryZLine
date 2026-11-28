@@ -95,6 +95,36 @@ test('finds Spring mappings and ignores comments', () => {
   assert.strictEqual(a.endpoints[0].declLine, 12);
 });
 
+test('each endpoint knows its whole section, from leading comments to the closing brace', () => {
+  const [portfolio, summary, overview, create] = analyse(JAVA, '').endpoints.flatMap(e => e.paths.map(() => e));
+  assert.deepStrictEqual([portfolio.startLine, portfolio.endLine], [10, 14]);  // includes the // comment above
+  assert.deepStrictEqual([summary.startLine, summary.endLine], [16, 17]);      // one-line body
+  assert.strictEqual(overview, summary);
+  assert.deepStrictEqual([create.startLine, create.endLine], [19, 20]);
+
+  const tricky = [
+    '@RestController',
+    'public class T {',
+    '    /**',
+    '     * Javadoc with a } brace.',
+    '     */',
+    '    @GetMapping("/t")',
+    '    public String t() {',
+    '        String s = "}{";',
+    '        char c = \'}\';',
+    '        if (s.isEmpty()) { return "x"; }',
+    '        return s;',
+    '    }',
+    '}',
+  ].join('\n');
+  const t = analyse(tricky, '/t').matches[0];
+  assert.deepStrictEqual([t.startLine, t.endLine], [3, 12]);
+
+  const iface = '@Path("/a")\npublic interface A {\n  @GET\n  @Path("/b")\n  Response b();\n}';
+  const b = analyse(iface, '/a/b').matches[0];
+  assert.deepStrictEqual([b.startLine, b.endLine], [3, 5]);  // no body: ends at the ";"
+});
+
 test('matches an eCommAPI with a context path and a path variable', () => {
   const a = analyse(JAVA, 'https://api.bank.com/spl-banking/enq/customer/portfolio/12345?x=1');
   assert.strictEqual(a.matches[0].methodName, 'getPortfolio');

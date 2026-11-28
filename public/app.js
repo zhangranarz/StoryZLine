@@ -182,20 +182,22 @@ function render(d) {
   $('file-where').textContent = `${d.project}/${d.repo}${d.ref ? ' @ ' + d.ref : ''} · ${d.path}${a.packageName ? ' · package ' + a.packageName : ''}`;
   $('open').href = d.browseUrl;
 
-  const matchLines = new Set(a.matches.flatMap(m => [m.line, m.declLine]));
-  const hitLines = new Set(a.textHits);
-  $('code').innerHTML = d.content.split(/\r?\n/).map((line, i) => {
-    const n = i + 1;
-    const cls = matchLines.has(n) ? ' match' : hitLines.has(n) ? ' hit' : '';
-    return `<span class="ln${cls}" id="L${n}" data-n="${n}">${esc(line) || ' '}</span>`;
-  }).join('');
+  // Show only the matching methods (merged where they overlap); the whole file when none match.
+  d.sections = [];
+  for (const [s, e] of a.matches.map(m => [m.startLine, m.endLine]).sort((x, y) => x[0] - y[0])) {
+    const prev = d.sections[d.sections.length - 1];
+    if (prev && s <= prev[1] + 1) prev[1] = Math.max(prev[1], e);
+    else d.sections.push([s, e]);
+  }
+  showWhole = !d.sections.length;
+  drawCode(d);
 
   let html;
   if (!d.ecommApi) {
-    html = '<span class="muted">No eCommAPI given: showing the file only.</span>';
+    html = '<span class="muted">No API given: showing the whole file.</span>';
   } else if (a.matches.length) {
     html = a.matches.map(m =>
-      `<div><span class="pill ${m.match}">${m.match === 'exact' ? 'Exact match' : 'Matches end of eCommAPI'}</span>
+      `<div><span class="pill ${m.match}">${m.match === 'exact' ? 'Exact match' : 'Matches end of API'}</span>
         ${esc(m.methods.join(', '))} <code>${esc(m.path)}</code> →
         <span class="ep-link" data-line="${m.declLine}">${esc((m.className ? m.className + '.' : '') + (m.methodName || '?'))}()</span>
         <span class="muted">line ${m.declLine}</span></div>`).join('');
@@ -217,7 +219,46 @@ function render(d) {
   if (first) jump(first, false);
 }
 
+let showWhole = false;
+
+// Draws the code: the found sections with "⋯" between them, or the whole file.
+function drawCode(d) {
+  const a = d.analysis;
+  const lines = d.content.split(/\r?\n/);
+  const matchLines = new Set(a.matches.flatMap(m => [m.line, m.declLine]));
+  const hitLines = new Set(a.textHits);
+  const line = n => {
+    const cls = matchLines.has(n) ? ' match' : hitLines.has(n) ? ' hit' : '';
+    return `<span class="ln${cls}" id="L${n}" data-n="${n}">${esc(lines[n - 1]) || ' '}</span>`;
+  };
+  const range = (s, e) => Array.from({ length: e - s + 1 }, (_, i) => line(s + i)).join('');
+  $('code').innerHTML = showWhole
+    ? range(1, lines.length)
+    : d.sections.map(([s, e]) => range(s, e)).join('<span class="gap">⋯</span>');
+  $('code-toggle').hidden = !d.sections.length;
+  $('code-toggle').textContent = showWhole ? 'Show found section only' : 'Show whole file';
+}
+
+// The text currently shown: the found sections, or the whole file.
+function shownText(d) {
+  if (showWhole) return d.content;
+  const lines = d.content.split(/\r?\n/);
+  return d.sections.map(([s, e]) => lines.slice(s - 1, e).join('\n')).join('\n\n');
+}
+
+$('code-toggle').addEventListener('click', () => {
+  if (!last) return;
+  showWhole = !showWhole;
+  drawCode(last);
+  const first = last.analysis.matches[0];
+  if (first) jump(first.declLine, false);
+});
+
 function jump(n, flash = true) {
+  if (!$('L' + n) && last && !showWhole) {  // outside the found sections: open the whole file
+    showWhole = true;
+    drawCode(last);
+  }
   const el = $('L' + n);
   if (!el) return;
   const pre = $('code');
@@ -236,7 +277,7 @@ document.addEventListener('click', e => {
 
 $('copy').addEventListener('click', async () => {
   if (!last) return;
-  try { await navigator.clipboard.writeText(last.content); setStatus('Copied to clipboard.'); }
+  try { await navigator.clipboard.writeText(shownText(last)); setStatus(showWhole ? 'Whole file copied.' : 'Found section copied.'); }
   catch { setStatus('Clipboard not available in this browser.', true); }
 });
 

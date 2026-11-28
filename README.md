@@ -81,6 +81,8 @@ Old `.xls` files aren't supported. In Excel, use *File > Save As > Excel Workboo
 
 **API** (the eCommAPI): the API path or full URL, e.g. `/spl-banking/enq/customer/portfolio/{id}`. StoryZLine finds the Spring (`@RequestMapping`, `@GetMapping`, …) and JAX-RS (`@Path`, `@GET`, …) mappings in the file. It joins class and method paths and matches them against the eCommAPI, allowing for a context-path prefix and `{path}` variables. Lines that only mention the API text are highlighted too.
 
+The result shows **only the matching method(s)**, from the comments and annotations above each one down to its closing `}`, with `⋯` between them. **Show whole file** switches to the complete file (and back). **Copy** copies what is shown; **Download** saves the whole file. If nothing matches, or no API is given, the whole file is shown.
+
 ## Security
 
 - The server listens on `127.0.0.1` only. The password is held in the page's memory and passed through per request; it is never written to disk or browser storage.

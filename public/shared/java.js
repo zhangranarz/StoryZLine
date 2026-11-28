@@ -121,6 +121,7 @@ function annotationGroups(code) {
     }
     group.decl = code.slice(i, j).replace(/\s+/g, ' ').trim();
     group.declOffset = i;
+    group.bodyOffset = j;  // the "{" that opens the body, or ";" when there is none
     groups.push(group);
     group = null;
     re.lastIndex = j;
@@ -128,9 +129,29 @@ function annotationGroups(code) {
   return groups;
 }
 
+// Offset of the "}" that closes the block opened at `open` (string and char literals skipped).
+function blockEnd(code, open) {
+  if (code[open] !== '{') return open;
+  let depth = 0;
+  for (let i = open; i < code.length; i++) {
+    const c = code[i];
+    if (c === '"' || c === "'") { for (i++; i < code.length && code[i] !== c && code[i] !== '\n'; i++) if (code[i] === '\\') i++; }
+    else if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) return i;
+  }
+  return code.length - 1;
+}
+
+// Moves a start line up over the comment lines (Javadoc, //) directly above it.
+function withLeadingComments(srcLines, line) {
+  while (line > 1 && /^(\/\/|\/\*|\*)/.test(srcLines[line - 2].trim())) line--;
+  return line;
+}
+
 function findEndpoints(src) {
   const code = stripComments(src);
   const lineOf = lineIndex(code);
+  const srcLines = src.split(/\r?\n/);
   const endpoints = [];
   let classBases = [''];
   let className = null;
@@ -162,6 +183,9 @@ function findEndpoints(src) {
       methodName,
       line: lineOf((mapping || g.annotations[0]).offset),
       declLine: lineOf(g.declOffset),
+      // The method's whole section: comments and annotations above it, down to its closing "}".
+      startLine: withLeadingComments(srcLines, lineOf(g.start)),
+      endLine: lineOf(blockEnd(code, g.bodyOffset)),
     });
   }
   return endpoints;

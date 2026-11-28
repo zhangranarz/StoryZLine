@@ -87,3 +87,4 @@ pre { margin: 0; overflow: auto; max-height: 75vh; background: var(--code-bg); f
 .ln.hit { background: var(--hit); }
 .ln.match { background: var(--match); }
 .ln.flash { outline: 2px solid var(--accent); outline-offset: -2px; }
+.gap { display: block; padding: 2px 0; text-align: center; color: var(--gutter); border-block: 1px dashed var(--border); user-select: none; }
