@@ -750,3 +750,42 @@ test('the route for an Endpoint method: <from uri="…_name"/> inside a <route>'
   assert.deepStrictEqual(findRouteSections(xml2, ['processSubmitApi']).processSubmitApi,
     [{ id: 'submit.route', start: 2, end: 6, fromLine: 5, uri: 'direct:xx.xx_processSubmitApi' }]);
 });
+
+test('API and Controller methods with the Endpoint method\'s own name win over the calls it makes', () => {
+  const ep = [
+    '@RestController',
+    'public class SubmitEndpoint {',
+    '  private final SubmitApi api;',
+    '  @PostMapping("/submit")',
+    '  public R processSubmitApi(@RequestBody Req req) {',
+    '    api.validate(req);',
+    '    return api.processSubmitApi(req);',
+    '  }',
+    '}',
+  ].join('\n');
+  const apiFile = 'public interface SubmitApi {\n  void validate(Req req);\n  /** Submits. */\n  R processSubmitApi(Req req);\n}';
+  const ctl = [
+    'public class SubmitController implements SubmitApi {',
+    '  public void validate(Req req) { }',
+    '  @Override',
+    '  public R processSubmitApi(Req req) {',
+    '    return cmd.run(req);',
+    '  }',
+    '  public R processSubmitApiV2(Req req) { return null; }',
+    '}',
+  ].join('\n');
+  const [row] = traceFlows({ endpoint: ep, api: apiFile, controller: ctl, apiPath: '/submit' }).rows;
+  assert.deepStrictEqual([row.api.map(m => m.name), row.controller.map(m => m.name)], [['processSubmitApi'], ['processSubmitApi']]);
+  assert.deepStrictEqual(row.linkedBy, { api: 'name', controller: 'name' });
+  // Only that method's section: the API method with its Javadoc, the Controller one with @Override.
+  assert.deepStrictEqual([row.api[0].startLine, row.api[0].endLine], [3, 4]);
+  assert.deepStrictEqual([row.controller[0].startLine, row.controller[0].endLine], [3, 6]);
+  // The Endpoint line calling the shared name is marked; api.validate() is not followed.
+  assert.deepStrictEqual(row.callLines, [7]);
+
+  // A Controller without a method of that name: the calls are followed there instead.
+  const ctl2 = 'public class SubmitController implements SubmitApi {\n  public void validate(Req req) { }\n  public R submit(Req req) { return null; }\n}';
+  const [row2] = traceFlows({ endpoint: ep.replace('api.processSubmitApi(req)', 'ctl.submit(req)').replace('private final SubmitApi api;', 'private final SubmitApi api;\n  private final SubmitController ctl;'), api: apiFile, controller: ctl2, apiPath: '/submit' }).rows;
+  assert.deepStrictEqual(row2.linkedBy, { api: 'name', controller: 'call' });
+  assert.deepStrictEqual(row2.controller.map(m => m.name), ['validate', 'submit']);
+});

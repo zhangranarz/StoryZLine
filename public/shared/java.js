@@ -293,7 +293,9 @@ function collect(list, callees, calls, edges, from, toLayer) {
 // Follows an eComm API through its code. Each source is a file's text, or null if not pulled.
 //   API path -> Endpoint: the Endpoint methods whose mapping matches apiPath (exact, or the end of
 //                         it); with no apiPath, every mapped Endpoint method.
-//   Endpoint -> API, Controller: calls inside that Endpoint method on a field, parameter or
+//   Endpoint -> API, Controller: the method with the Endpoint method's own name in each file
+//                         (processSubmitApi() -> processSubmitApi()); in a file without one, calls
+//                         inside that Endpoint method on a field, parameter or
 //                         variable typed as the API class or the Controller class (or, with no such
 //                         variable, calls to any method those files have). Each called method is
 //                         looked up by name in the API file and in the Controller file (its
@@ -365,12 +367,36 @@ function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controll
     const node = (layer, m) => ({ layer, name: m.name || m.methodName, declLine: m.declLine });
     const epNode = node('endpoint', endpoint);
 
-    // Endpoint -> API and Controller.
+    // Endpoint -> API and Controller: the method with the Endpoint method's own name (e.g.
+    // processSubmitApi() in each file); in a file without one, the methods the Endpoint calls.
     const epCalls = callsIn(ep.code, ep.lineOf, endpoint, ep.vars,
       name => has(callees.api)(name) || has(callees.controller)(name), [...statics('api'), ...statics('controller')]);
-    collect(row.api, callees.api, epCalls, row.edges, epNode, 'api');
-    const ctlTargets = collect(row.controller, callees.controller, epCalls, row.edges, epNode, 'controller');
-    row.callLines = epCalls.map(c => c.line);
+    const sameName = callees => callees.filter(x => x.name === endpoint.name);
+    let ctlTargets = [];
+    row.linkedBy = {};  // per layer: 'name' (same name as the Endpoint method) or 'call'
+    for (const k of ['api', 'controller']) {
+      const named = sameName(callees[k]);
+      let found;
+      if (named.length) {
+        found = named;
+        for (const t of named) {
+          row[k].push({ ...section(t), call: `same name: ${t.name}()` });
+          row.edges.push({ from: epNode, to: node(k, t), kind: 'call', call: `same name: ${t.name}()` });
+        }
+        row.linkedBy[k] = 'name';
+      } else {
+        found = collect(row[k], callees[k], epCalls, row.edges, epNode, k);
+        if (found.length) row.linkedBy[k] = 'call';
+      }
+      if (k === 'controller') ctlTargets = found;
+    }
+    // Mark the Endpoint's lines that make those calls: calls to the shared name, or the calls followed.
+    const byName = Object.values(row.linkedBy).includes('name');
+    const byCall = Object.values(row.linkedBy).includes('call');
+    row.callLines = [
+      ...(byName ? callsIn(ep.code, ep.lineOf, endpoint, [], n => n === endpoint.name) : []),
+      ...(byCall ? epCalls : []),
+    ].map(c => c.line);
     // An API method reached by the Endpoint is implemented by the Controller method of the same name.
     for (const a of row.api) {
       for (const c of row.controller.filter(x => x.name === a.name)) {

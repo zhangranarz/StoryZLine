@@ -519,6 +519,8 @@ function render(results, apiPath) {
   const none = '<span class="none">—</span>';
   const notPulled = '<span class="none">not pulled</span>';
   const names = list => list.map(m => `${esc(m.name)}()`).join(', ') || none;
+  // How an API/Controller method was found: by the Endpoint method's name, or by following its calls.
+  const by = (r, k) => (r.linkedBy && r.linkedBy[k] === 'name' ? ' <small>(same name)</small>' : '');
   const match = r => (r.match ? `<span class="pill ${r.match}">${r.match === 'exact' ? 'Exact match' : 'Matches end of API'}</span>` : none);
   $('flow').querySelector('tbody').innerHTML = flows.rows.map((r, i) => `
     <tr data-row="${i}" tabindex="0">
@@ -527,8 +529,8 @@ function render(results, apiPath) {
       <td>${match(r)}</td>
       <td>${r.endpoint ? `${esc(r.endpoint.name)}()` : none}</td>
       <td>${src('route') != null ? (r.routes && r.routes.length ? r.routes.map(x => `<code>${esc(x.id || `line ${x.start}`)}</code>`).join('<br>') : none) : notPulled}</td>
-      <td>${src('api') != null ? names(r.api) : notPulled}</td>
-      <td>${src('controller') != null ? names(r.controller) : notPulled}</td>
+      <td>${src('api') != null ? names(r.api) + by(r, 'api') : notPulled}</td>
+      <td>${src('controller') != null ? names(r.controller) + by(r, 'controller') : notPulled}</td>
       <td>${src('command') != null ? names(r.command) : notPulled}</td>
       <td>${src('builder') != null ? names(r.builder) : notPulled}</td>
     </tr>`).join('') ||
