@@ -31,7 +31,8 @@
     return true;
   }
 
-  // rows: traceFlows rows; routeLines: [{ n, text }] (a matching route line and the lines after it).
+  // rows: traceFlows rows; routeLines: [{ n, text }] (a matching route line and the lines after it), used for rows without
+  // routes of their own (row.routes: [{ id, start, uri }] from findRouteSections).
   // Returns { nodes, edges }; every node and edge knows the rows it belongs to.
   function flowGraph({ rows, apiPath = '', routeLines = [] }) {
     const nodes = new Map();
@@ -56,14 +57,25 @@
       addNode(ep, 'endpoint', `${r.endpoint.name}()`, `${r.methods.join(' ')} ${r.paths.join(' ')}`.trim(), i,
         { pane: 'endpoint', line: r.endpoint.declLine });
 
-      const routes = routeLines.filter(l => routeFits(l.text, r, rows));
-      for (const l of routes) {
-        const id = `route:${l.n}`;
-        addNode(id, 'route', routeLabel(l.text), `line ${l.n}`, i, { pane: 'route', line: l.n });
+      // The row's own <route> (found by the Endpoint method name), else route lines that fit it.
+      let routed = 0;
+      for (const x of r.routes || []) {
+        const id = `route:${x.start}`;
+        addNode(id, 'route', x.id || `line ${x.start}`, x.uri, i, { pane: 'route', line: x.start });
         addEdge('start', id, 'route', 'matches the route', i);
-        addEdge(id, ep, 'route', 'routes to the Endpoint', i);
+        addEdge(id, ep, 'route', `from ${x.uri}`, i);
+        routed++;
       }
-      if (!routes.length) addEdge('start', ep, 'route', 'mapped to the Endpoint', i);
+      if (!routed) {
+        for (const l of routeLines.filter(l => routeFits(l.text, r, rows))) {
+          const id = `route:${l.n}`;
+          addNode(id, 'route', routeLabel(l.text), `line ${l.n}`, i, { pane: 'route', line: l.n });
+          addEdge('start', id, 'route', 'matches the route', i);
+          addEdge(id, ep, 'route', 'routes to the Endpoint', i);
+          routed++;
+        }
+      }
+      if (!routed) addEdge('start', ep, 'route', 'mapped to the Endpoint', i);
 
       // Endpoint -> Controller calls made through the API interface are drawn as Endpoint -> API -> Controller.
       const implemented = new Set(r.edges.filter(e => e.kind === 'implements').map(e => e.to.declLine));

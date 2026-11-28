@@ -409,6 +409,50 @@ function traceFlows({ endpoint: endpointSrc = null, api: apiSrc = null, controll
   return { rows, classes };
 }
 
+// Camel-style route files: the <route> element whose <from uri="…_name"/> names an Endpoint method,
+// e.g. <from uri="direct:xx.xx_processSubmitApi"/> for processSubmitApi(). "_name" must end there
+// (_processSubmitApiV2 is a different name); a <from> line wins over other mentions, and XML comments
+// are ignored. Returns { [name]: [{ id, start, end, fromLine, uri }] }: the route's id and its lines.
+function findRouteSections(src, names) {
+  // Blank out <!-- comments --> but keep line breaks, so line numbers stay right.
+  const text = String(src || '').replace(/<!--[\s\S]*?-->/g, m => m.replace(/[^\n]/g, ' '));
+  const lineOf = lineIndex(text);
+  const lines = text.split(/\r?\n/);
+
+  // Every <route> element (not <routes> or <routeContext>), with nesting.
+  const sections = [];
+  const open = [];
+  for (const m of text.matchAll(/<(\/?)route(?![-\w:.])([^>]*?)(\/?)>/g)) {
+    const line = lineOf(m.index);
+    if (m[1]) {
+      const s = open.pop();
+      if (s) { s.end = line; sections.push(s); }
+    } else {
+      const id = (m[2].match(/\bid\s*=\s*["']([^"']*)["']/) || [])[1] || '';
+      const s = { id, start: line, end: line };
+      if (m[3]) sections.push(s); else open.push(s);
+    }
+  }
+
+  const found = {};
+  for (const name of [...new Set(names.filter(Boolean))]) {
+    const rx = new RegExp(`_${name.replace(/[$]/g, '\\$&')}(?![\\w$])`);
+    let hits = lines.map((l, i) => (rx.test(l) ? i + 1 : 0)).filter(Boolean);
+    const fromHits = hits.filter(n => /<from\b/i.test(lines[n - 1]));
+    if (fromHits.length) hits = fromHits;
+    const list = [];
+    for (const n of hits) {
+      // The innermost <route> around the line.
+      const s = sections.filter(x => x.start <= n && n <= x.end).sort((a, b) => b.start - a.start)[0];
+      if (!s || list.some(x => x.start === s.start)) continue;
+      const uri = (lines[n - 1].match(/\buri\s*=\s*["']([^"']*)["']/) || [])[1] || '';
+      list.push({ id: s.id, start: s.start, end: s.end, fromLine: n, uri });
+    }
+    found[name] = list;
+  }
+  return found;
+}
+
 // Lines of a route/configuration file (any text format, e.g. XML) that belong to an eComm API.
 // In order, the first that finds something:
 //   'path': lines holding a path pattern that matches the API path: the whole of one of them
@@ -513,7 +557,7 @@ function analyse(src, api) {
   };
 }
 
-const api = { analyse, findEndpoints, findMethods, traceFlows, findRouteLines, matchEndpoints, normaliseApi, stripComments };
+const api = { analyse, findEndpoints, findMethods, traceFlows, findRouteSections, findRouteLines, matchEndpoints, normaliseApi, stripComments };
 if (typeof module === 'object' && module.exports) module.exports = api;
 else window.StoryZJava = api;
 })();

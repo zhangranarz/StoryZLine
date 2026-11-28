@@ -563,11 +563,12 @@ test('tracing with missing files and without typed fields', () => {
 
 // ---- Route file ----
 
-const { findRouteLines } = require('../public/shared/java');
-const ROUTES = 'ecomm-services/src/main/resources/routes/portfolio-routes.xml';
+const { findRouteLines, findRouteSections } = require('../public/shared/java');
+const ROUTES = 'ecomm-services/src/main/resources/routes/portfolio-routes.xml';    // Camel style: <from uri="…_name"/>
+const GATEWAY = 'ecomm-services/src/main/resources/routes/gateway-routes.xml';    // path patterns
 
 test('the route file lines for an API: path patterns, with the context path on either side', () => {
-  const xml = sample(ROUTES);
+  const xml = sample(GATEWAY);
   const lines = xml.split(/\r?\n/);
   const ids = api => findRouteLines(xml, api, ['CustomerPortfolioEndpoint']).lines.map(n => (lines[n - 1].match(/id="([^"]+)"/) || [])[1]);
   assert.deepStrictEqual(ids('/spl-banking/enq/customer/portfolio/12345'), ['portfolio-get', 'portfolio-update']);  // * = one segment
@@ -661,25 +662,23 @@ function demoGraph(apiPath) {
     endpoint: sample(SPRING), api: sample(API_FILE), controller: sample(CTL_FILE),
     command: sample(CMD_FILE), builder: sample(BUILDER_FILE), apiPath,
   });
-  const xml = sample(ROUTES);
-  const lines = xml.split(/\r?\n/);
-  const hits = findRouteLines(xml, apiPath, [flows.classes.endpoint]).lines;
-  const routeLines = hits.map(n => ({ n, text: lines.slice(n - 1, n + 3).join('\n') }));
-  return { flows, graph: Diagram.flowGraph({ rows: flows.rows, apiPath, routeLines }) };
+  const sections = findRouteSections(sample(ROUTES), flows.rows.map(r => r.endpoint.name));
+  for (const r of flows.rows) r.routes = sections[r.endpoint.name] || [];
+  return { flows, graph: Diagram.flowGraph({ rows: flows.rows, apiPath }) };
 }
 
 test('the process diagram has a box per step and an arrow per call', () => {
   const { flows, graph } = demoGraph('/spl-banking/enq/customer/portfolio/12345');
   const label = id => { const n = graph.nodes.find(x => x.id === id); return `${n.layer}:${n.label}`; };
   assert.deepStrictEqual(graph.edges.map(e => `${label(e.from)} > ${label(e.to)} [${e.kind}] rows ${e.rows}`), [
-    'start:/spl-banking/enq/customer/portfolio/12345 > route:portfolio-get [route] rows 0',
-    'route:portfolio-get > endpoint:getPortfolio() [route] rows 0',
+    'start:/spl-banking/enq/customer/portfolio/12345 > route:ecomm.portfolio.get [route] rows 0',
+    'route:ecomm.portfolio.get > endpoint:getPortfolio() [route] rows 0',
     'endpoint:getPortfolio() > api:getPortfolio() [call] rows 0',
     'api:getPortfolio() > controller:getPortfolio() [implements] rows 0',
     'controller:getPortfolio() > command:enquire() [call] rows 0',
     'endpoint:getPortfolio() > builder:portfolio() [response] rows 0',
-    'start:/spl-banking/enq/customer/portfolio/12345 > route:portfolio-update [route] rows 1',
-    'route:portfolio-update > endpoint:updatePortfolio() [route] rows 1',
+    'start:/spl-banking/enq/customer/portfolio/12345 > route:ecomm.portfolio.update [route] rows 1',
+    'route:ecomm.portfolio.update > endpoint:updatePortfolio() [route] rows 1',
     'endpoint:updatePortfolio() > api:validate() [call] rows 1',
     'endpoint:updatePortfolio() > api:savePortfolio() [call] rows 1',
     'api:validate() > controller:validate() [implements] rows 1',
@@ -714,4 +713,38 @@ test('the process diagram without a route file, and with nothing to draw', () =>
   assert.strictEqual(Diagram.routeFits('<route method="POST" path="/x">', rows[0], rows), false);
   assert.strictEqual(Diagram.routeFits('route.x=/x', rows[0], rows), true);
   assert.strictEqual(Diagram.routeLabel('<route id="portfolio-get" path="/a/b">'), 'portfolio-get');
+});
+
+test('the route for an Endpoint method: <from uri="…_name"/> inside a <route>', () => {
+  const xml = sample(ROUTES);
+  const lines = xml.split(/\r?\n/);
+  const found = findRouteSections(xml, ['getPortfolio', 'updatePortfolio', 'summary', 'notThere']);
+  assert.deepStrictEqual(Object.fromEntries(Object.entries(found).map(([k, v]) => [k, v.map(x => x.id)])), {
+    getPortfolio: ['ecomm.portfolio.get'],         // not _getPortfolioHistory, not the commented-out route
+    updatePortfolio: ['ecomm.portfolio.update'],
+    summary: ['ecomm.portfolio.summary'],
+    notThere: [],
+  });
+  const get = found.getPortfolio[0];
+  assert.match(lines[get.start - 1], /<route id="ecomm\.portfolio\.get">/);
+  assert.match(lines[get.end - 1], /<\/route>/);
+  assert.match(lines[get.fromLine - 1], /<from uri="direct:ecomm\.portfolio_getPortfolio"\/>/);
+  assert.strictEqual(get.uri, 'direct:ecomm.portfolio_getPortfolio');
+  // A nested <choice> doesn't end the route early.
+  assert.match(lines[found.updatePortfolio[0].end - 1], /<\/route>/);
+  assert.ok(found.updatePortfolio[0].end - found.updatePortfolio[0].start >= 8);
+
+  // An opening tag over several lines, a <from> elsewhere in the route, and a mention outside <from>.
+  const xml2 = [
+    '<routes>',
+    '  <route',
+    '      id="submit.route" streamCache="true">',
+    '    <description>handles direct:x.y_processSubmitApi</description>',
+    '    <from uri="direct:xx.xx_processSubmitApi"/>',
+    '  </route>',
+    '  <route id="other"><from uri="direct:xx.xx_processSubmitApiV2"/></route>',
+    '</routes>',
+  ].join('\n');
+  assert.deepStrictEqual(findRouteSections(xml2, ['processSubmitApi']).processSubmitApi,
+    [{ id: 'submit.route', start: 2, end: 6, fromLine: 5, uri: 'direct:xx.xx_processSubmitApi' }]);
 });

@@ -1,33 +1,49 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Demo route file for StoryZLine: an invented format, not a real product's. -->
-<routes service="ecomm-services">
+<!-- Demo Camel route file for StoryZLine: invented, not a real application's.
+     Each route starts from direct:<group>_<Endpoint method name>. -->
+<routes xmlns="http://camel.apache.org/schema/spring">
 
-    <!-- Customer portfolio -->
-    <route id="portfolio-get" method="GET" path="/spl-banking/enq/customer/portfolio/*">
-        <target endpoint="CustomerPortfolioEndpoint" operation="getPortfolio"/>
-        <timeout ms="5000"/>
+    <route id="ecomm.portfolio.get">
+        <from uri="direct:ecomm.portfolio_getPortfolio"/>
+        <log message="Portfolio enquiry for ${header.customerId}"/>
+        <to uri="bean:customerPortfolioController?method=getPortfolio"/>
     </route>
 
-    <route id="portfolio-update" method="POST" path="/spl-banking/enq/customer/portfolio/*">
-        <target endpoint="CustomerPortfolioEndpoint" operation="updatePortfolio"/>
-        <timeout ms="8000"/>
+    <route id="ecomm.portfolio.update">
+        <from uri="direct:ecomm.portfolio_updatePortfolio"/>
+        <choice>
+            <when>
+                <simple>${body} == null</simple>
+                <throwException exceptionType="java.lang.IllegalArgumentException" message="No portfolio"/>
+            </when>
+        </choice>
+        <to uri="bean:customerPortfolioController?method=savePortfolio"/>
     </route>
 
-    <route id="portfolio-holding-delete" method="DELETE" path="/spl-banking/enq/customer/portfolio/*/holdings/*">
-        <target endpoint="CustomerPortfolioEndpoint" operation="removeHolding"/>
+    <route id="ecomm.portfolio.holding.delete">
+        <from uri="direct:ecomm.portfolio_removeHolding"/>
+        <to uri="bean:customerPortfolioController?method=removeHolding"/>
     </route>
 
-    <route id="portfolio-export" method="GET" path="/spl-banking/enq/customer/portfolio/{customerId}/export">
-        <target endpoint="CustomerPortfolioEndpoint" operation="exportPortfolio"/>
+    <route id="ecomm.portfolio.export">
+        <from uri="direct:ecomm.portfolio_exportPortfolio"/>
+        <to uri="bean:customerPortfolioController?method=exportCsv"/>
     </route>
 
-    <route id="portfolio-summary" method="GET,POST" path="/spl-banking/enq/customer/**/summary">
-        <target endpoint="CustomerPortfolioEndpoint" operation="summary"/>
+    <route id="ecomm.portfolio.summary">
+        <from uri="direct:ecomm.portfolio_summary"/>
+        <to uri="bean:customerPortfolioController?method=summary"/>
     </route>
 
-    <!-- Accounts (JAX-RS service) -->
-    <route id="account-balance" method="GET" path="/spl-banking/accounts/{accountId}/balance">
-        <target endpoint="AccountBalanceResource" operation="balance"/>
+    <!-- Only starts like _getPortfolio: must not be taken for it. -->
+    <route id="ecomm.portfolio.history">
+        <from uri="direct:ecomm.portfolio_getPortfolioHistory"/>
+        <to uri="bean:portfolioHistory?method=list"/>
     </route>
 
+    <!-- A retired route, commented out: must be ignored.
+    <route id="ecomm.portfolio.get.old">
+        <from uri="direct:ecomm.portfolio_getPortfolio"/>
+    </route>
+    -->
 </routes>

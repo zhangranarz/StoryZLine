@@ -496,17 +496,24 @@ function render(results, apiPath) {
   const flows = Java.traceFlows({
     endpoint: src('endpoint'), api: src('api'), controller: src('controller'), command: src('command'), builder: src('builder'), apiPath,
   });
-  // The route file's lines for this API (the same for every row).
-  const route = src('route') != null ? Java.findRouteLines(src('route'), apiPath, [flows.classes.endpoint]) : null;
-  // The process diagram: each matching route line comes with the lines after it (up to the next
-  // match), which may name the Endpoint method it routes to.
+  // Each row's route: the <route> whose <from uri="…_name"/> names its Endpoint method.
+  let byName = false;
+  if (src('route') != null) {
+    const sections = Java.findRouteSections(src('route'), flows.rows.map(r => r.endpoint.name));
+    for (const r of flows.rows) r.routes = sections[r.endpoint.name] || [];
+    byName = flows.rows.some(r => r.routes.length);
+  }
+  // Without any such route: the lines with a path matching the API (the same for every row).
+  const route = src('route') != null && !byName ? Java.findRouteLines(src('route'), apiPath, [flows.classes.endpoint]) : null;
+  // For the process diagram, each matching route line comes with the lines after it (up to the
+  // next match), which may name the Endpoint method it routes to.
   let routeLines = [];
   if (route) {
     const lines = src('route').split(/\r?\n/);
     routeLines = route.lines.map((n, k) => ({ n, text: lines.slice(n - 1, Math.min(n + 3, route.lines[k + 1] ? route.lines[k + 1] - 1 : n + 3)).join('\n') }));
   }
   const graph = Diagram.flowGraph({ rows: flows.rows, apiPath, routeLines });
-  view = { files, flows, route, graph, apiPath, selected: 0, panes: {}, whole: {} };
+  view = { files, flows, route, byName, graph, apiPath, selected: 0, panes: {}, whole: {} };
   $('result').hidden = false;
 
   const none = '<span class="none">—</span>';
@@ -519,12 +526,13 @@ function render(results, apiPath) {
       <td>${r.paths.map(p => `<code>${esc(p)}</code>`).join('<br>') || none}</td>
       <td>${match(r)}</td>
       <td>${r.endpoint ? `${esc(r.endpoint.name)}()` : none}</td>
+      <td>${src('route') != null ? (r.routes && r.routes.length ? r.routes.map(x => `<code>${esc(x.id || `line ${x.start}`)}</code>`).join('<br>') : none) : notPulled}</td>
       <td>${src('api') != null ? names(r.api) : notPulled}</td>
       <td>${src('controller') != null ? names(r.controller) : notPulled}</td>
       <td>${src('command') != null ? names(r.command) : notPulled}</td>
       <td>${src('builder') != null ? names(r.builder) : notPulled}</td>
     </tr>`).join('') ||
-    `<tr><td colspan="8" class="none">${src('endpoint') == null ? 'The Endpoint file was not pulled.' : apiPath ? 'No Endpoint mapping matches this API.' : 'No mappings found in the Endpoint.'}</td></tr>`;
+    `<tr><td colspan="9" class="none">${src('endpoint') == null ? 'The Endpoint file was not pulled.' : apiPath ? 'No Endpoint mapping matches this API.' : 'No mappings found in the Endpoint.'}</td></tr>`;
 
   const linked = flows.rows.filter(r => r.api.length || r.controller.length || r.command.length || r.builder.length).length;
   $('flow-state').textContent = flows.rows.length ? `${flows.rows.length} row${flows.rows.length === 1 ? '' : 's'}, ${linked} linked past the Endpoint` : '';
@@ -542,9 +550,12 @@ function render(results, apiPath) {
   if (flows.classes.builder && flows.rows.length && !flows.rows.some(r => r.builder.length)) {
     notes.push(`No calls to ${flows.classes.builder} were found in the Endpoint or Controller methods.`);
   }
-  if (route) {
+  if (byName) {
+    const missing = flows.rows.filter(r => !r.routes.length).map(r => `_${r.endpoint.name}`);
+    notes.push(`Route: found by the Endpoint method name in <from uri="…_name"/>.${missing.length ? ` No route for ${missing.join(', ')}.` : ''}`);
+  } else if (route) {
     const n = route.lines.length;
-    notes.push(!n ? 'Route: no line matches this API.'
+    notes.push(!n ? `Route: no <from uri> ends in ${flows.rows.map(r => `_${r.endpoint.name}`).join(' or ') || 'an Endpoint method name'}, and no line matches this API.`
       : `Route: ${n} line${n === 1 ? '' : 's'} ${route.how === 'path' ? 'with a path matching the API' : route.how === 'text' ? 'mentioning the API path' : `mentioning ${flows.classes.endpoint}`}.`);
   }
   $('flow-note').textContent = notes.join(' ');
@@ -626,7 +637,12 @@ function mergeRanges(list) {
 // The line ranges and highlighted lines of a row in one pane.
 function rowParts(key, row) {
   if (key === 'route') {
-    // The route's matching lines, with two lines of context; the same for every row.
+    // The row's own <route> section(s), marking the <route id> and <from uri> lines.
+    if (view.byName) {
+      const routes = row && row.routes ? row.routes : [];
+      return { ranges: mergeRanges(routes.map(x => [x.start, x.end])), marks: routes.flatMap(x => [x.start, x.fromLine]) };
+    }
+    // Else the lines with a path matching the API, with two lines of context; the same for every row.
     const marks = view.route ? view.route.lines : [];
     const last = view.files.route.content.split(/\r?\n/).length;
     return { ranges: mergeRanges(marks.map(n => [Math.max(1, n - 2), Math.min(last, n + 2)])), marks };
@@ -673,7 +689,9 @@ function drawPane(key) {
   const whole = view.whole[key] || !ranges.length;
   msg.className = 'pane-msg note';
   msg.textContent = ranges.length ? ''
-    : key === 'route' ? 'No line in the Route file matches this API: showing the whole file.'
+    : key === 'route' ? (view.byName && row
+      ? `No <route> has a <from uri> ending in _${row.endpoint.name}: showing the whole file.`
+      : 'No line in the Route file matches this API: showing the whole file.')
     : row ? `No ${f.label} method for this row: showing the whole file.` : '';
   msg.hidden = !msg.textContent;
 
