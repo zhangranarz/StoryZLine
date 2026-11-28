@@ -1,6 +1,6 @@
 # StoryZLine
 
-A small local web tool: enter an **eCommAPI** and the **EndPoint Java file location**, and it pulls the Java source from Bitbucket. It then shows the source with the matching endpoint method highlighted.
+A small local web tool: enter an eComm **API** and its **Endpoint** (the Java file's location), and it pulls the Java source from Bitbucket. It then shows the source with the matching endpoint method highlighted.
 
 ## Setup
 
@@ -74,12 +74,12 @@ Old `.xls` files aren't supported. In Excel, use *File > Save As > Excel Workboo
 
 ## What you can enter
 
-**EndPoint Java file location**, any of:
+**Endpoint** (built from the parts above it, or typed/pasted), any of:
 - A Bitbucket Server URL copied from the browser: `https://git.bank.com/projects/ECOM/repos/ecomm-api/browse/src/main/java/.../PortfolioEndpoint.java?at=refs/heads/develop`
 - A Bitbucket Cloud URL: `https://bitbucket.org/<workspace>/<repo>/src/<branch>/<path>`
-- A plain path inside the default repo: `src/main/java/.../PortfolioEndpoint.java`
+- A plain path inside the Project and Repository chosen above: `src/main/java/.../PortfolioEndpoint.java`
 
-**eCommAPI**: the API path or full URL, e.g. `/spl-banking/enq/customer/portfolio/{id}`. StoryZLine finds the Spring (`@RequestMapping`, `@GetMapping`, …) and JAX-RS (`@Path`, `@GET`, …) mappings in the file. It joins class and method paths and matches them against the eCommAPI, allowing for a context-path prefix and `{path}` variables. Lines that only mention the API text are highlighted too.
+**API** (the eCommAPI): the API path or full URL, e.g. `/spl-banking/enq/customer/portfolio/{id}`. StoryZLine finds the Spring (`@RequestMapping`, `@GetMapping`, …) and JAX-RS (`@Path`, `@GET`, …) mappings in the file. It joins class and method paths and matches them against the eCommAPI, allowing for a context-path prefix and `{path}` variables. Lines that only mention the API text are highlighted too.
 
 ## Security
 
