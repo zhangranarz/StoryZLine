@@ -44,6 +44,40 @@
       <p class="note">Your password goes only to this local server and on to Bitbucket. It is never saved; reloading the page clears it. The URL, user ID and defaults are remembered in this browser.</p>
     </form>
 
+    <section id="pick" class="card">
+      <div class="card-title">Pick from Excel <span id="pick-state" class="state"></span></div>
+      <div class="actions">
+        <label class="file-button">
+          <input id="pick-file" type="file" accept=".xlsx,.csv,.txt">
+          <span>Load Excel list…</span>
+        </label>
+        <button id="pick-template" type="button">Download template</button>
+        <button id="pick-clear" type="button" hidden>Forget list</button>
+        <span id="pick-status" role="status"></span>
+      </div>
+      <p class="note">Columns: <b>Bitbucket URL</b>, <b>Project key</b>, <b>Repository</b>, <b>Branch</b>, <b>Endpoint Java file location</b> (first sheet, .xlsx or .csv). The file is read in this browser only.</p>
+
+      <div id="pick-body" hidden>
+        <div class="grid">
+          <label class="wide"><span>Bitbucket URL</span><select id="pick-baseUrl" data-key="baseUrl"></select></label>
+          <label><span>Project key</span><select id="pick-project" data-key="project"></select></label>
+          <label><span>Repository</span><select id="pick-repo" data-key="repo"></select></label>
+          <label><span>Branch</span><select id="pick-branch" data-key="branch"></select></label>
+          <label><span>Endpoint Java file location</span><select id="pick-location" data-key="location"></select></label>
+          <label><span>Path <small class="muted">(added after the location)</small></span><input id="pick-path" placeholder="enq/customer" autocomplete="off"></label>
+          <label><span>File name</span><input id="pick-name" placeholder="PortfolioEndpoint.java" autocomplete="off"></label>
+        </div>
+        <label>
+          <span>Full Bitbucket file URL</span>
+          <output id="pick-url" class="url-preview"></output>
+        </label>
+        <div class="actions">
+          <button id="pick-use" type="button">Use this file</button>
+          <button id="pick-copy" type="button">Copy URL</button>
+        </div>
+      </div>
+    </section>
+
     <form id="form" class="card">
       <label>
         <span>eCommAPI</span>
@@ -84,6 +118,7 @@
   </main>
 
   <script src="shared/location.js"></script>
+  <script src="shared/excel.js"></script>
   <script src="shared/java.js"></script>
   <script src="app.js"></script>
 </body>

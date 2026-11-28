@@ -260,3 +260,104 @@ test('Python server goes direct when the company proxy demands a login (407)', {
     mock.close();
   }
 });
+
+// ---- Pick from Excel ----
+
+const zlib = require('zlib');
+const { buildFileUrl } = require('../public/shared/location');
+const { readXlsx, readCsv, toEntries, readTable } = require('../public/shared/excel');
+
+test('buildFileUrl joins Bitbucket URL, project, repo, location, path and file name', () => {
+  const parts = {
+    baseUrl: 'https://git.example.com/bitbucket/', project: 'ECOM', repo: 'ecomm-api', branch: 'develop',
+    location: '/src/main/java/com/bank/ecomm/', path: '\\enq\\customer\\', fileName: 'PortfolioEndpoint',
+  };
+  const url = buildFileUrl(parts);
+  assert.strictEqual(url, 'https://git.example.com/bitbucket/projects/ECOM/repos/ecomm-api/browse/src/main/java/com/bank/ecomm/enq/customer/PortfolioEndpoint.java?at=develop');
+  // It reads back to the same file.
+  const back = resolveLocation(url, { baseUrl: parts.baseUrl });
+  assert.deepStrictEqual([back.project, back.repo, back.ref, back.path],
+    ['ECOM', 'ecomm-api', 'develop', 'src/main/java/com/bank/ecomm/enq/customer/PortfolioEndpoint.java']);
+
+  assert.strictEqual(buildFileUrl({ ...parts, branch: '', path: '', fileName: 'A.java' }),
+    'https://git.example.com/bitbucket/projects/ECOM/repos/ecomm-api/browse/src/main/java/com/bank/ecomm/A.java');
+  assert.strictEqual(buildFileUrl({ baseUrl: 'https://bitbucket.org', project: 'acme', repo: 'api', branch: 'main', location: 'src', fileName: 'B' }),
+    'https://bitbucket.org/acme/api/src/main/src/B.java');
+  const release = buildFileUrl({ ...parts, branch: 'release/1.2' });
+  assert.match(release, /\?at=release\/1\.2$/);
+  assert.strictEqual(resolveLocation(release, { baseUrl: parts.baseUrl }).ref, 'release/1.2');
+  assert.throws(() => buildFileUrl({ ...parts, fileName: '' }), /File name/);
+  assert.throws(() => buildFileUrl({ ...parts, path: '../secret' }), /\.\./);
+});
+
+test('CSV list: header found below a title, semicolons, quotes and duplicates', () => {
+  const csv = '﻿My endpoint list;;;;\r\n' +
+    'Bitbucket URL;Project Key;Repository;Branch;EndPoint Java File Location\r\n' +
+    'https://git.example.com;ECOM;ecomm-api;develop;"src/main/java/a;b"\r\n' +
+    'https://git.example.com;ECOM;ecomm-api;develop;"src/main/java/a;b"\r\n' +
+    ';;;;\r\n' +
+    'https://git.example.com;PAY;pay-api;main;src/main/java/pay\r\n';
+  const { entries, columns } = toEntries(readCsv(csv));
+  assert.deepStrictEqual(columns, ['baseUrl', 'project', 'repo', 'branch', 'location']);
+  assert.strictEqual(entries.length, 2);
+  assert.deepStrictEqual(entries[0], { baseUrl: 'https://git.example.com', project: 'ECOM', repo: 'ecomm-api', branch: 'develop', location: 'src/main/java/a;b' });
+  assert.throws(() => toEntries([['Name', 'Value'], ['a', 'b']]), /header row/);
+});
+
+// Builds a zip the way Excel does (deflated entries, central directory at the end).
+function makeZip(files) {
+  const locals = [], centrals = [];
+  let offset = 0;
+  for (const [name, text] of Object.entries(files)) {
+    const raw = Buffer.from(text, 'utf8');
+    const stored = name.endsWith('.rels');  // exercise both stored and deflated entries
+    const data = stored ? raw : zlib.deflateRawSync(raw);
+    const nameBuf = Buffer.from(name);
+    const crc = zlib.crc32(raw);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(stored ? 0 : 8, 8);
+    local.writeUInt32LE(crc, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(raw.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(stored ? 0 : 8, 10); central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20); central.writeUInt32LE(raw.length, 24);
+    central.writeUInt16LE(nameBuf.length, 28); central.writeUInt32LE(offset, 42);
+    locals.push(local, nameBuf, data);
+    centrals.push(central, nameBuf);
+    offset += 30 + nameBuf.length + data.length;
+  }
+  const cd = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(Object.keys(files).length, 8); end.writeUInt16LE(Object.keys(files).length, 10);
+  end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, cd, end]);
+}
+
+test('reads the first sheet of an .xlsx file', async () => {
+  const xlsx = makeZip({
+    '[Content_Types].xml': '<?xml version="1.0"?><Types/>',
+    'xl/workbook.xml': '<workbook xmlns:r="r"><sheets><sheet name="Endpoints" sheetId="3" r:id="rId7"/><sheet name="Other" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    'xl/_rels/workbook.xml.rels': '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/><Relationship Id="rId7" Target="worksheets/sheet7.xml"/></Relationships>',
+    'xl/sharedStrings.xml': '<sst count="7"><si><t>Bitbucket URL</t></si><si><t>Project key</t></si>' +
+      '<si><r><rPr><b/></rPr><t>Repo</t></r><r><t xml:space="preserve">sitory</t></r></si><si><t>Branch</t></si>' +
+      '<si><t>Endpoint Java file location</t></si><si><t>https://git.example.com/bitbucket</t></si><si><t>feature/a&amp;b</t></si></sst>',
+    'xl/worksheets/sheet1.xml': '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>wrong sheet</t></is></c></row></sheetData></worksheet>',
+    'xl/worksheets/sheet7.xml': '<worksheet><sheetData>' +
+      '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c><c r="D1" t="s"><v>3</v></c><c r="E1" t="s"><v>4</v></c></row>' +
+      '<row r="2"><c r="A2" t="s"><v>5</v></c><c r="B2" t="inlineStr"><is><t>ECOM</t></is></c><c r="C2" t="str"><v>ecomm-api</v></c><c r="D2" t="s"><v>6</v></c><c r="E2" s="1"/></row>' +
+      '<row r="3" spans="1:5"/>' +
+      '<row r="4"><c r="A4" t="s"><v>5</v></c><c r="B4"><v>2024</v></c><c r="C4" t="inlineStr"><is><t>legacy</t></is></c><c r="E4" t="inlineStr"><is><t>src/main/java</t></is></c></row>' +
+      '</sheetData></worksheet>',
+  });
+  const rows = await readTable('Endpoints.xlsx', xlsx);
+  assert.deepStrictEqual(rows[0], ['Bitbucket URL', 'Project key', 'Repository', 'Branch', 'Endpoint Java file location']);
+  const { entries } = toEntries(rows);
+  assert.deepStrictEqual(entries, [
+    { baseUrl: 'https://git.example.com/bitbucket', project: 'ECOM', repo: 'ecomm-api', branch: 'feature/a&b', location: '' },
+    { baseUrl: 'https://git.example.com/bitbucket', project: '2024', repo: 'legacy', branch: '', location: 'src/main/java' },
+  ]);
+  await assert.rejects(readXlsx(Buffer.from('not a zip')), /not an \.xlsx/);
+  await assert.rejects(readTable('old.xls', Buffer.alloc(0)), /\.xls files are not supported/);
+});

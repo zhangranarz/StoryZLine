@@ -9,6 +9,8 @@ let last = null;
 const store = {
   get(k) { try { return localStorage.getItem('storyzline.' + k) || ''; } catch { return ''; } },
   set(k, v) { try { localStorage.setItem('storyzline.' + k, v); } catch { /* storage unavailable */ } },
+  remove(k) { try { localStorage.removeItem('storyzline.' + k); } catch { /* storage unavailable */ } },
+  json(k) { try { return JSON.parse(this.get(k) || 'null'); } catch { return null; } },
 };
 // Login fields remembered between visits. The password is deliberately not in this list.
 const CONN_FIELDS = { baseUrl: 'conn-url', user: 'conn-user', project: 'conn-project', repo: 'conn-repo', branch: 'conn-branch' };
@@ -196,3 +198,143 @@ $('download').addEventListener('click', () => {
   a.click();
   URL.revokeObjectURL(a.href);
 });
+
+// ---- Pick from Excel ----------------------------------------------------------------
+// The list (no passwords) and the last picks are remembered in this browser.
+
+const XL = window.StoryZExcel;
+const PICK_KEYS = ['baseUrl', 'project', 'repo', 'branch', 'location'];
+let pickEntries = [];
+let pickColumns = [];
+
+function setPickStatus(text, isError = false) {
+  $('pick-status').textContent = text;
+  $('pick-status').className = isError ? 'error' : '';
+}
+
+function pickParts() {
+  const p = { path: $('pick-path').value, fileName: $('pick-name').value };
+  for (const k of PICK_KEYS) p[k] = $('pick-' + k).value;
+  return p;
+}
+
+function loadPickList(list) {
+  pickEntries = list.entries;
+  pickColumns = list.columns;
+  $('pick-body').hidden = false;
+  $('pick-clear').hidden = false;
+  $('pick-state').textContent = `${list.entries.length} row${list.entries.length === 1 ? '' : 's'} from ${list.source}`;
+  $('pick-state').className = 'state ok';
+  const saved = store.json('pickChoice') || {};
+  for (const k of PICK_KEYS) $('pick-' + k).dataset.want = saved[k] || '';
+  $('pick-path').value = saved.path || '';
+  $('pick-name').value = saved.fileName || '';
+  refreshPicks();
+}
+
+// Each pick list only offers values that fit the picks to its left.
+function refreshPicks() {
+  let rows = pickEntries;
+  for (const k of PICK_KEYS) {
+    const sel = $('pick-' + k);
+    const current = sel.value || sel.dataset.want || '';
+    delete sel.dataset.want;
+    const values = [...new Set(rows.map(e => e[k]))];
+    sel.innerHTML = values.map(v => `<option value="${esc(v)}">${esc(v || (pickColumns.includes(k) ? '(empty)' : '(not in sheet)'))}</option>`).join('');
+    sel.value = values.includes(current) ? current : values[0];
+    sel.disabled = !pickColumns.includes(k);
+    rows = rows.filter(e => e[k] === sel.value);
+  }
+  updatePickUrl();
+}
+
+function updatePickUrl() {
+  const out = $('pick-url');
+  const parts = pickParts();
+  store.set('pickChoice', JSON.stringify(parts));
+  try {
+    out.textContent = Loc.buildFileUrl(parts);
+    out.className = 'url-preview';
+    return out.textContent;
+  } catch (err) {
+    out.textContent = err.message;
+    out.className = 'url-preview error';
+    return null;
+  }
+}
+
+function saveFile(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+$('pick-file').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  setPickStatus(`Reading ${file.name}…`);
+  try {
+    if (!/\.(csv|txt)$/i.test(file.name) && typeof DecompressionStream === 'undefined') {
+      throw new Error('This browser is too old to read .xlsx files. Save the sheet as CSV in Excel, or use a current Edge or Chrome.');
+    }
+    const rows = await XL.readTable(file.name, await file.arrayBuffer());
+    const list = { ...XL.toEntries(rows), source: file.name };
+    store.set('pickList', JSON.stringify(list));
+    loadPickList(list);
+    setPickStatus('');
+  } catch (err) {
+    setPickStatus(err.message, true);
+  }
+});
+
+for (const k of PICK_KEYS) $('pick-' + k).addEventListener('change', refreshPicks);
+for (const id of ['pick-path', 'pick-name']) {
+  $(id).addEventListener('input', updatePickUrl);
+  $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('pick-use').click(); } });
+}
+
+$('pick-use').addEventListener('click', () => {
+  const url = updatePickUrl();
+  if (!url) return;
+  const p = pickParts();
+  // The login must be for the same Bitbucket server as the picked file.
+  if ($('conn-url').value.trim().replace(/\/+$/, '') !== p.baseUrl.trim().replace(/\/+$/, '')) {
+    $('conn-url').value = p.baseUrl.trim();
+    store.set('baseUrl', $('conn-url').value);
+    loggedIn = false;
+    updateState();
+  }
+  $('location').value = url;
+  store.set('location', url);
+  const needLogin = !$('conn-user').value.trim() || !$('conn-pass').value;
+  setStatus(needLogin
+    ? 'File location filled in. Enter your user ID and password above, then click "Pull from Bitbucket".'
+    : 'File location filled in. Click "Pull from Bitbucket".');
+  $('form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  (needLogin ? $(!$('conn-user').value.trim() ? 'conn-user' : 'conn-pass') : $('go')).focus({ preventScroll: true });
+});
+
+$('pick-copy').addEventListener('click', async () => {
+  const url = updatePickUrl();
+  if (!url) return;
+  try { await navigator.clipboard.writeText(url); setPickStatus('URL copied.'); }
+  catch { setPickStatus('Clipboard not available in this browser.', true); }
+});
+
+$('pick-template').addEventListener('click', () => saveFile('storyzline-list.csv', XL.TEMPLATE_CSV, 'text/csv'));
+
+$('pick-clear').addEventListener('click', () => {
+  store.remove('pickList');
+  store.remove('pickChoice');
+  pickEntries = [];
+  $('pick-body').hidden = true;
+  $('pick-clear').hidden = true;
+  $('pick-state').textContent = '';
+  setPickStatus('List forgotten. Load another Excel file any time.');
+});
+
+const savedList = store.json('pickList');
+if (savedList && Array.isArray(savedList.entries) && savedList.entries.length) loadPickList(savedList);

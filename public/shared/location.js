@@ -88,6 +88,37 @@
     return { project, repo, ref, path, rawUrl, browseUrl };
   }
 
+  // Joins pick-list parts into the Bitbucket "browse" URL of a file:
+  // Bitbucket URL + project + repository + endpoint location + extra path + file name (+ branch).
+  // A file name without an extension gets ".java".
+  function buildFileUrl(parts) {
+    const cfg = { baseUrl: String(parts.baseUrl || '').trim() };
+    checkBaseUrl(cfg);
+    const project = String(parts.project || '').trim();
+    const repo = String(parts.repo || '').trim();
+    const branch = String(parts.branch || '').trim();
+    if (!project || !repo) throw new LocationError('Pick a project key and repository.');
+    let name = String(parts.fileName || '').trim().replace(/^[\\/]+/, '');
+    if (!name) throw new LocationError('Enter the File name.');
+    if (!/\.[A-Za-z0-9]+$/.test(name)) name += '.java';
+    const segments = [parts.location, parts.path, name]
+      .flatMap(s => String(s || '').replace(/\\/g, '/').split('/'))
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (segments.includes('..')) throw new LocationError('Path must not contain "..".');
+    const filePath = segments.map(encodeURIComponent).join('/');
+    const base = cfg.baseUrl.replace(/\/+$/, '');
+    const p = encodeURIComponent(project);
+    const r = encodeURIComponent(repo);
+    if (isCloud(cfg)) {
+      if (!branch) throw new LocationError('Bitbucket Cloud needs a branch.');
+      return `${base}/${p}/${r}/src/${encodeURIComponent(branch)}/${filePath}`;
+    }
+    // "/" is allowed in a query string; leaving it readable keeps branch names like release/1.2 legible.
+    const at = branch ? `?at=${encodeURIComponent(branch).replace(/%2F/gi, '/')}` : '';
+    return `${base}/projects/${p}/repos/${r}/browse/${filePath}${at}`;
+  }
+
   // A cheap authenticated request that confirms the URL and login work.
   function loginCheckUrl(cfg) {
     checkBaseUrl(cfg);
@@ -111,7 +142,7 @@
     return null;
   }
 
-  const api = { resolveLocation, loginCheckUrl, responseProblem, isCloud, LocationError };
+  const api = { resolveLocation, buildFileUrl, loginCheckUrl, responseProblem, isCloud, LocationError };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else window.StoryZLocation = api;
 })();

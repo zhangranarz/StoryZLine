@@ -42,6 +42,25 @@ If it doesn't work:
 - *`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`* or *`SELF_SIGNED_CERT_IN_CHAIN`*: your company's certificate authority. Run `set NODE_EXTRA_CA_CERTS=C:\path\to\corp-ca.pem` before `start.cmd`.
 - The server only accepts connections from the computer it runs on. Opening `127.0.0.1:5180` on one laptop never reaches the server on another; run it on each laptop.
 
+## Pick from Excel
+
+Instead of typing locations, keep them in an Excel sheet. The first sheet needs a header row with these columns (any order; a title row above it is fine):
+
+| Bitbucket URL | Project key | Repository | Branch | Endpoint Java file location |
+|---|---|---|---|---|
+| https://bitbucket.yourcompany.com | ECOM | ecomm-api | develop | src/main/java/com/yourcompany/ecomm/endpoint |
+
+*Branch* and *Endpoint Java file location* are optional. **Download template** in the page gives you a CSV to start from.
+
+1. Click **Load Excel list…** and choose the `.xlsx` (or `.csv`) file. It is read in your browser only, and remembered there until you click **Forget list**.
+2. Pick from the lists. Each one only offers values that fit the picks before it.
+3. Type the extra **Path** (added after the location) and the **File name**. `.java` is added if you leave out the extension.
+4. The full Bitbucket file URL appears underneath:
+   `Bitbucket URL /projects/ Project key /repos/ Repository /browse/ Endpoint location / Path / File name ?at= Branch`
+5. Click **Use this file**. It fills in *EndPoint Java file location*, and switches the login's Bitbucket URL to the picked server if needed. Then click **Pull from Bitbucket**.
+
+Old `.xls` files aren't supported. In Excel, use *File > Save As > Excel Workbook (.xlsx)* or CSV.
+
 ## What you can enter
 
 **EndPoint Java file location**, any of:
